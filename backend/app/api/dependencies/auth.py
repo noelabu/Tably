@@ -51,12 +51,23 @@ async def get_current_user(
                 status_code=401, detail="Unauthorized Access: Invalid token"
             )
         
+        # Get user data from public.users table
+        user_data_response = supabase.table("users").select("*").eq("id", user_response.user.id).execute()
+        
+        if not user_data_response.data:
+            logger.error("User not found in public.users table")
+            raise HTTPException(
+                status_code=404, detail="User not found"
+            )
+        
+        user_data = user_data_response.data[0]
+        
         return UserResponse(
             id=user_response.user.id,
             email=user_response.user.email,
-            full_name=user_response.user.user_metadata.get("full_name") if user_response.user.user_metadata else None,
-            role=user_response.user.user_metadata.get("role", "customer") if user_response.user.user_metadata else "customer",
-            created_at=user_response.user.created_at.isoformat() if user_response.user.created_at else None
+            full_name=user_data.get("full_name") or user_response.user.user_metadata.get("full_name") if user_response.user.user_metadata else None,
+            role=user_data.get("role", "customer"),  # Get role from public.users table
+            created_at=user_data.get("created_at") or (user_response.user.created_at.isoformat() if user_response.user.created_at else None)
         )
 
     except HTTPException:

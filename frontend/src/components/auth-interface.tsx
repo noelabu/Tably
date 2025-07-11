@@ -63,7 +63,13 @@ export default function AuthInterface({
     
     if (success) {
       onLogin?.(loginEmail, loginPassword)
-      router.push('/dashboard')
+      // Redirect based on user role
+      const userRole = useAuthStore.getState().user?.role
+      if (userRole === 'business-owner') {
+        router.push('/business/dashboard')
+      } else {
+        router.push('/customer/dashboard')
+      }
     } else {
       setError('Invalid email or password')
     }
@@ -82,7 +88,13 @@ export default function AuthInterface({
     
     if (success) {
       onRegister?.(registerData)
-      router.push('/dashboard')
+      // Redirect based on user role
+      const userRole = useAuthStore.getState().user?.role
+      if (userRole === 'business-owner') {
+        router.push('/business/dashboard')
+      } else {
+        router.push('/customer/dashboard')
+      }
     } else {
       setError('Registration failed. Please try again.')
     }

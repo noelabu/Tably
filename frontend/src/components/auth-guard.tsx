@@ -8,14 +8,16 @@ interface AuthGuardProps {
   children: React.ReactNode
   requireAuth?: boolean
   redirectTo?: string
+  allowedRoles?: ('customer' | 'business-owner')[]
 }
 
 export default function AuthGuard({ 
   children, 
   requireAuth = true, 
-  redirectTo = '/login' 
+  redirectTo = '/login',
+  allowedRoles
 }: AuthGuardProps) {
-  const { isAuthenticated, isLoading } = useAuthStore()
+  const { isAuthenticated, isLoading, user } = useAuthStore()
   const router = useRouter()
 
   useEffect(() => {
@@ -23,10 +25,25 @@ export default function AuthGuard({
       if (requireAuth && !isAuthenticated) {
         router.push(redirectTo)
       } else if (!requireAuth && isAuthenticated) {
-        router.push('/dashboard')
+        // Redirect authenticated users to their role-specific dashboard
+        if (user?.role === 'business-owner') {
+          router.push('/business/dashboard')
+        } else {
+          router.push('/customer/dashboard')
+        }
+      } else if (requireAuth && isAuthenticated && allowedRoles && user?.role) {
+        // Check if user has the required role
+        if (!allowedRoles.includes(user.role)) {
+          // Redirect to their appropriate dashboard
+          if (user.role === 'business-owner') {
+            router.push('/business/dashboard')
+          } else {
+            router.push('/customer/dashboard')
+          }
+        }
       }
     }
-  }, [isAuthenticated, isLoading, requireAuth, redirectTo, router])
+  }, [isAuthenticated, isLoading, requireAuth, redirectTo, allowedRoles, user, router])
 
   if (isLoading) {
     return (
@@ -41,6 +58,10 @@ export default function AuthGuard({
   }
 
   if (!requireAuth && isAuthenticated) {
+    return null
+  }
+
+  if (requireAuth && isAuthenticated && allowedRoles && user?.role && !allowedRoles.includes(user.role)) {
     return null
   }
 
