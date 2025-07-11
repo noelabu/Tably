@@ -1,9 +1,11 @@
-from fastapi import APIRouter, HTTPException, Depends, status, Request
+from fastapi import APIRouter, HTTPException, Depends, status, Form
+from supabase import Client
 import logging
 from datetime import datetime
 from app.core.config import settings
 from app.core.supabase import get_supabase_client
 from app.models.auth import LoginRequest, SignupRequest, TokenResponse, UserResponse, RefreshTokenRequest
+from app.api.dependencies.auth import get_current_user, get_supabase
 from gotrue.errors import AuthApiError
 
 # Configure logging
@@ -114,78 +116,52 @@ async def signup(request: SignupRequest):
         )
 
 # Login endpoint
-@router.post("/login", response_model=TokenResponse)
-async def login(request: LoginRequest):
+@router.post("/login")
+async def login(
+    username: str = Form(...),
+    password: str = Form(...),
+    supabase: Client = Depends(get_supabase),
+):
     """
     Authenticate user with email and password
     """
+    # Validate input
+    if not username or not password:
+        raise HTTPException(status_code=400, detail="Email and password are required")
+
     try:
-        supabase = get_supabase_client()
-        
-        # Sign in with Supabase Auth
-        response = supabase.auth.sign_in_with_password({
-            "email": request.email,
-            "password": request.password
-        })
-        
-        if response.session is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid email or password"
-            )
-        
-        # Return token response
-        return TokenResponse(
-            access_token=response.session.access_token,
-            refresh_token=response.session.refresh_token,
-            expires_in=response.session.expires_in,
-            user={
-                "id": response.user.id,
-                "email": response.user.email,
-                "full_name": response.user.user_metadata.get("full_name") if response.user.user_metadata else None,
-                "role": response.user.user_metadata.get("role", "customer") if response.user.user_metadata else "customer"
-            }
+        response = supabase.auth.sign_in_with_password(
+            {"email": username, "password": password}
         )
-        
-    except AuthApiError as e:
-        logger.error(f"Supabase auth error: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password"
-        )
+        # Extract JWT token from the response
+        access_token = response.session.access_token
+        refresh_token = response.session.refresh_token
+
+        return {
+            "message": "Login Successful",
+            "access_token": access_token,
+            "token_type": "bearer",
+            "refresh_token": refresh_token,
+        }
+    except HTTPException as http_exc:
+        raise http_exc
+
     except Exception as e:
-        logger.error(f"Login error: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An error occurred during login"
-        )
+        raise HTTPException(status_code=401, detail=f"Invalid credentials: {str(e)}")
 
 # Logout endpoint
 @router.post("/logout")
-async def logout(request: Request):
+async def logout(
+    user: UserResponse = Depends(get_current_user), supabase: Client = Depends(get_supabase)
+):
     """
     Logout the current user
     """
     try:
-        authorization = request.headers.get("Authorization")
-        if not authorization or not authorization.startswith("Bearer "):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Missing or invalid authorization header"
-            )
-        
-        supabase = get_supabase_client()
-        
-        # Sign out with Supabase
         supabase.auth.sign_out()
-        
         return {"message": "Successfully logged out"}
-        
     except Exception as e:
-        logger.error(f"Logout error: {str(e)}")
-        # Even if logout fails on server, we return success
-        # Client should clear tokens regardless
-        return {"message": "Successfully logged out"}
+        raise HTTPException(status_code=400, detail=f"Logout failed: {str(e)}")
 
 # Refresh token endpoint
 @router.post("/refresh", response_model=TokenResponse)
@@ -233,49 +209,8 @@ async def refresh_token(request: RefreshTokenRequest):
 
 # Get current user endpoint
 @router.get("/me", response_model=UserResponse)
-async def get_current_user_endpoint(request: Request):
+async def get_current_user_endpoint(current_user: UserResponse = Depends(get_current_user)):
     """
     Get current authenticated user information
     """
-    try:
-        authorization = request.headers.get("Authorization")
-        if not authorization or not authorization.startswith("Bearer "):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Missing or invalid authorization header"
-            )
-        
-        # Extract token
-        access_token = authorization.split(" ")[1]
-        
-        supabase = get_supabase_client()
-        
-        # Get user from token
-        response = supabase.auth.get_user(access_token)
-        
-        if response.user is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token"
-            )
-        
-        return UserResponse(
-            id=response.user.id,
-            email=response.user.email,
-            full_name=response.user.user_metadata.get("full_name") if response.user.user_metadata else None,
-            role=response.user.user_metadata.get("role", "customer") if response.user.user_metadata else "customer",
-            created_at=response.user.created_at
-        )
-        
-    except AuthApiError as e:
-        logger.error(f"Supabase auth error: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token"
-        )
-    except Exception as e:
-        logger.error(f"Get current user error: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An error occurred while fetching user information"
-        )
+    return current_user
