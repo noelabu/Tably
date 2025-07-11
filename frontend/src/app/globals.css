@@ -1,0 +1,207 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import 'tailwindcss';
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  /* Shadcn/UI Core Colors - Purple Theme */
+  --color-background: #ffffff;
+  --color-foreground: #1e1b4b;
+
+  --color-card: #ffffff;
+  --color-card-foreground: #1e1b4b;
+
+  --color-popover: #ffffff;
+  --color-popover-foreground: #1e1b4b;
+
+  --color-primary: #8b5cf6; /* Purple Primary */
+  --color-primary-foreground: #ffffff;
+
+  --color-secondary: #faf5ff; /* Purple Tinted Light */
+  --color-secondary-foreground: #1e1b4b;
+
+  --color-muted: #f3f4f6; /* Light Neutral for Muted */
+  --color-muted-foreground: #6b7280; /* Medium Neutral for Muted Foreground */
+
+  --color-accent: #faf5ff; /* Purple Tinted Light for Accent */
+  --color-accent-foreground: #1e1b4b;
+
+  --color-destructive: #ef4444;
+  --color-destructive-foreground: #f8fafc;
+
+  --color-border: #e5e7eb; /* Default border color */
+  --color-input: #e5e7eb; /* Default input border color */
+  --color-ring: #8b5cf6; /* Purple for ring */
+
+  /* Chart Colors - Purple themed */
+  --color-chart-1: #8b5cf6;
+  --color-chart-2: #a855f7;
+  --color-chart-3: #c084fc;
+  --color-chart-4: #d8b4fe;
+  --color-chart-5: #e879f9;
+
+  /* Custom Sidebar Colors - Purple themed */
+  --color-sidebar: #faf5ff;
+  --color-sidebar-foreground: #374151;
+  --color-sidebar-primary: #7c3aed;
+  --color-sidebar-primary-foreground: #ffffff;
+  --color-sidebar-accent: #f3f4f6;
+  --color-sidebar-accent-foreground: #1e1b4b;
+  --color-sidebar-border: #d1d5db;
+  --color-sidebar-ring: #8b5cf6;
+
+  /* Additional Design System Colors - Purple Theme */
+  --color-neutral-light: #faf5ff;
+  --color-neutral-medium: #6b7280;
+  --color-neutral-dark: #1e1b4b;
+
+  /* Purple Gradient Colors */
+  --color-purple-50: #faf5ff;
+  --color-purple-100: #f3e8ff;
+  --color-purple-200: #e9d5ff;
+  --color-purple-300: #d8b4fe;
+  --color-purple-400: #c084fc;
+  --color-purple-500: #a855f7;
+  --color-purple-600: #8b5cf6;
+  --color-purple-700: #7c3aed;
+  --color-purple-800: #6d28d9;
+  --color-purple-900: #5b21b6;
+  --color-purple-950: #4c1d95;
+
+  /* Font Families */
+  --font-inter: "Inter", sans-serif;
+
+  /* Shadcn/UI Radii (default, as no specific design system override) */
+  --radius-lg: 0.5rem;
+  --radius-md: calc(0.5rem - 2px);
+  --radius-sm: calc(0.5rem - 4px);
+
+  /* Animations for Shadcn (default) */
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up: accordion-up 0.2s ease-out;
+
+  @keyframes accordion-down {
+    from {
+      height: 0;
+    }
+    to {
+      height: var(--radix-accordion-content-height);
+    }
+  }
+  @keyframes accordion-up {
+    from {
+      height: var(--radix-accordion-content-height);
+    }
+    to {
+      height: 0;
+    }
+  }
+}
+
+/*
+  The default border color has changed to `currentColor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
+
+  If we ever want to remove these styles, we need to add an explicit border
+  color utility to any element that depends on these defaults.
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-border); /* Use border token */
+  }
+}
+
+@layer utilities {
+  body {
+    font-family: var(--font-inter);
+  }
+  
+  /* Purple themed utilities */
+  .bg-purple-gradient {
+    background: linear-gradient(135deg, #8b5cf6 0%, #a855f7 100%);
+  }
+  
+  .text-purple-gradient {
+    background: linear-gradient(135deg, #8b5cf6 0%, #a855f7 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+}
+
+@layer base {
+  :root {
+    /* Shadcn/UI Light Mode Variables - Purple Theme */
+    --background: var(--color-background);
+    --foreground: var(--color-foreground);
+    --card: var(--color-card);
+    --card-foreground: var(--color-card-foreground);
+    --popover: var(--color-popover);
+    --popover-foreground: var(--color-popover-foreground);
+    --primary: var(--color-primary);
+    --primary-foreground: var(--color-primary-foreground);
+    --secondary: var(--color-secondary);
+    --secondary-foreground: var(--color-secondary-foreground);
+    --muted: var(--color-muted);
+    --muted-foreground: var(--color-muted-foreground);
+    --accent: var(--color-accent);
+    --accent-foreground: var(--color-accent-foreground);
+    --destructive: var(--color-destructive);
+    --destructive-foreground: var(--color-destructive-foreground);
+    --border: var(--color-border);
+    --input: var(--color-input);
+    --ring: var(--color-ring);
+    --chart-1: var(--color-chart-1);
+    --chart-2: var(--color-chart-2);
+    --chart-3: var(--color-chart-3);
+    --chart-4: var(--color-chart-4);
+    --chart-5: var(--color-chart-5);
+    --radius: var(--radius-lg); /* Using the largest radius for --radius */
+
+    /* Custom sidebar variables */
+    --sidebar-background: var(--color-sidebar);
+    --sidebar-foreground: var(--color-sidebar-foreground);
+    --sidebar-primary: var(--color-sidebar-primary);
+    --sidebar-primary-foreground: var(--color-sidebar-primary-foreground);
+    --sidebar-accent: var(--color-sidebar-accent);
+    --sidebar-accent-foreground: var(--color-sidebar-accent-foreground);
+    --sidebar-border: var(--color-sidebar-border);
+    --sidebar-ring: var(--color-sidebar-ring);
+  }
+
+  /* No dark mode specified in the design system, therefore no dark styles are included. */
+
+  * {
+    border-color: var(--border);
+  }
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-inter);
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-inter);
+    color: var(--color-neutral-dark); /* Headings use the dark neutral for prominence */
+  }
+
+  a {
+    color: var(--primary); /* Links use the primary color */
+    text-decoration: none;
+  }
+
+  a:hover {
+    text-decoration: underline;
+  }
+
+  /* Font classes (for finer control, if needed, though Tailwind utilities are preferred) */
+  .font-inter {
+    font-family: var(--font-inter);
+  }
+}
