@@ -1,16 +1,27 @@
 'use client'
 
+import { useState } from 'react'
 import { useAuth } from '@/hooks/use-auth'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import AuthGuard from '@/components/auth-guard'
+import BusinessManage from '@/components/business-manage'
 import { Store, TrendingUp, Users, Package, DollarSign, Clock, Bell, Settings } from 'lucide-react'
 
 export default function BusinessDashboard() {
   const { user, logout } = useAuth()
+  const [isManageModalOpen, setIsManageModalOpen] = useState(false)
 
   const handleLogout = async () => {
     await logout()
+  }
+
+  const handleManageRestaurant = () => {
+    setIsManageModalOpen(true)
+  }
+
+  const handleCloseManageModal = () => {
+    setIsManageModalOpen(false)
   }
 
   return (
@@ -220,7 +231,7 @@ export default function BusinessDashboard() {
                       <span className="text-sm font-medium">Avg Prep Time</span>
                       <span className="text-sm text-muted-foreground">15 min</span>
                     </div>
-                    <Button className="w-full">
+                    <Button className="w-full" onClick={handleManageRestaurant}>
                       Manage Restaurant
                     </Button>
                   </div>
@@ -255,6 +266,12 @@ export default function BusinessDashboard() {
             </div>
           </div>
         </main>
+
+        {/* BusinessManage Modal */}
+        <BusinessManage 
+          isOpen={isManageModalOpen} 
+          onClose={handleCloseManageModal} 
+        />
       </div>
     </AuthGuard>
   )
