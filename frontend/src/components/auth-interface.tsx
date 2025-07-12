@@ -10,6 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox'
 import { Separator } from '@/components/ui/separator'
 import { Eye, EyeOff, Mail, Lock, User, Chrome } from 'lucide-react'
+import { useAuthStore } from '@/stores/auth.store'
+import { useRouter } from 'next/navigation'
 
 interface AuthInterfaceProps {
   onLogin?: (email: string, password: string) => void
@@ -35,6 +37,7 @@ export default function AuthInterface({
   const [activeTab, setActiveTab] = useState('login')
   const [showPassword, setShowPassword] = useState(false)
   const [showRegisterPassword, setShowRegisterPassword] = useState(false)
+  const [error, setError] = useState('')
   
   // Login form state
   const [loginEmail, setLoginEmail] = useState('')
@@ -49,14 +52,52 @@ export default function AuthInterface({
     acceptTerms: false
   })
 
-  const handleLogin = (e: React.FormEvent) => {
+  const { login, signup, isLoading } = useAuthStore()
+  const router = useRouter()
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
-    onLogin?.(loginEmail, loginPassword)
+    setError('')
+    
+    const success = await login(loginEmail, loginPassword)
+    
+    if (success) {
+      onLogin?.(loginEmail, loginPassword)
+      // Redirect based on user role
+      const userRole = useAuthStore.getState().user?.role
+      if (userRole === 'business-owner') {
+        router.push('/business/dashboard')
+      } else {
+        router.push('/customer/dashboard')
+      }
+    } else {
+      setError('Invalid email or password')
+    }
   }
 
-  const handleRegister = (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault()
-    onRegister?.(registerData)
+    setError('')
+    
+    const success = await signup(
+      registerData.email, 
+      registerData.password, 
+      registerData.name, 
+      registerData.role as 'customer' | 'business-owner'
+    )
+    
+    if (success) {
+      onRegister?.(registerData)
+      // Redirect based on user role
+      const userRole = useAuthStore.getState().user?.role
+      if (userRole === 'business-owner') {
+        router.push('/business/dashboard')
+      } else {
+        router.push('/customer/dashboard')
+      }
+    } else {
+      setError('Registration failed. Please try again.')
+    }
   }
 
   const handleSocialLogin = (provider: string) => {
@@ -92,6 +133,11 @@ export default function AuthInterface({
             </TabsList>
 
             <TabsContent value="login" className="space-y-4 mt-6">
+              {error && (
+                <div className="bg-destructive/15 border border-destructive text-destructive px-4 py-3 rounded-md text-sm">
+                  {error}
+                </div>
+              )}
               <form onSubmit={handleLogin} className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="login-email" className="text-foreground font-[var(--font-inter)]">
@@ -146,8 +192,12 @@ export default function AuthInterface({
                   </button>
                 </div>
 
-                <Button type="submit" className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-[var(--font-inter)]">
-                  Sign In
+                <Button 
+                  type="submit" 
+                  className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-[var(--font-inter)]"
+                  disabled={isLoading}
+                >
+                  {isLoading ? 'Signing In...' : 'Sign In'}
                 </Button>
               </form>
 
@@ -187,6 +237,11 @@ export default function AuthInterface({
             </TabsContent>
 
             <TabsContent value="register" className="space-y-4 mt-6">
+              {error && (
+                <div className="bg-destructive/15 border border-destructive text-destructive px-4 py-3 rounded-md text-sm">
+                  {error}
+                </div>
+              )}
               <form onSubmit={handleRegister} className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="register-name" className="text-foreground font-[var(--font-inter)]">
@@ -281,9 +336,9 @@ export default function AuthInterface({
                 <Button 
                   type="submit" 
                   className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-[var(--font-inter)]"
-                  disabled={!registerData.acceptTerms}
+                  disabled={!registerData.acceptTerms || isLoading}
                 >
-                  Create Account
+                  {isLoading ? 'Creating Account...' : 'Create Account'}
                 </Button>
               </form>
 
