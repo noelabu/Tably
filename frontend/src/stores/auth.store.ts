@@ -1,20 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-
-export interface User {
-  id: string;
-  email: string;
-  full_name?: string;
-  role: 'customer' | 'business-owner';
-  created_at?: string;
-}
-
-interface AuthTokens {
-  access_token: string;
-  refresh_token?: string;
-  token_type: string;
-  expires_in?: number;
-}
+import { authService } from '@/services/auth';
+import { User, AuthTokens } from '@/types/auth.types';
 
 interface AuthState {
   user: User | null;
@@ -33,100 +20,6 @@ interface AuthState {
   setLoading: (loading: boolean) => void;
 }
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-
-const authApi = {
-  async login(email: string, password: string) {
-    const params = new URLSearchParams();
-    params.append('username', email);
-    params.append('password', password);
-    
-    const response = await fetch(`${API_BASE_URL}/api/v1/auth/login`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: params.toString(),
-    });
-    
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.detail || 'Login failed');
-    }
-    
-    return response.json();
-  },
-
-  async signup(email: string, password: string, fullName?: string, role?: 'customer' | 'business-owner') {
-    const response = await fetch(`${API_BASE_URL}/api/v1/auth/signup`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        email,
-        password,
-        full_name: fullName,
-        role: role || 'customer',
-      }),
-    });
-    
-    if (!response.ok) {
-      throw new Error('Signup failed');
-    }
-    
-    return response.json();
-  },
-
-  async logout(token: string) {
-    const response = await fetch(`${API_BASE_URL}/api/v1/auth/logout`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-      },
-    });
-    
-    if (!response.ok) {
-      throw new Error('Logout failed');
-    }
-    
-    return response.json();
-  },
-
-  async refreshToken(refreshToken: string) {
-    const response = await fetch(`${API_BASE_URL}/api/v1/auth/refresh`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        refresh_token: refreshToken,
-      }),
-    });
-    
-    if (!response.ok) {
-      throw new Error('Token refresh failed');
-    }
-    
-    return response.json();
-  },
-
-  async getCurrentUser(token: string) {
-    const response = await fetch(`${API_BASE_URL}/api/v1/auth/me`, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-      },
-    });
-    
-    if (!response.ok) {
-      throw new Error('Failed to get current user');
-    }
-    
-    return response.json();
-  },
-};
-
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
@@ -138,7 +31,7 @@ export const useAuthStore = create<AuthState>()(
       login: async (email: string, password: string) => {
         set({ isLoading: true });
         try {
-          const response = await authApi.login(email, password);
+          const response = await authService.login(email, password);
           const tokens = {
             access_token: response.access_token,
             refresh_token: response.refresh_token,
@@ -148,7 +41,7 @@ export const useAuthStore = create<AuthState>()(
           
           set({ tokens, isAuthenticated: true });
           
-          const user = await authApi.getCurrentUser(tokens.access_token);
+          const user = await authService.getCurrentUser(tokens.access_token);
           set({ user, isLoading: false });
           
           return true;
@@ -162,7 +55,7 @@ export const useAuthStore = create<AuthState>()(
       signup: async (email: string, password: string, fullName?: string, role?: 'customer' | 'business-owner') => {
         set({ isLoading: true });
         try {
-          const response = await authApi.signup(email, password, fullName, role);
+          const response = await authService.signup(email, password, fullName, role);
           const tokens = {
             access_token: response.access_token,
             refresh_token: response.refresh_token,
@@ -189,7 +82,7 @@ export const useAuthStore = create<AuthState>()(
         const { tokens } = get();
         if (tokens?.access_token) {
           try {
-            await authApi.logout(tokens.access_token);
+            await authService.logout(tokens.access_token);
           } catch (error) {
             console.error('Logout error:', error);
           }
@@ -210,7 +103,7 @@ export const useAuthStore = create<AuthState>()(
         }
         
         try {
-          const response = await authApi.refreshToken(tokens.refresh_token);
+          const response = await authService.refreshToken(tokens.refresh_token);
           const newTokens = {
             access_token: response.access_token,
             refresh_token: response.refresh_token,
@@ -238,7 +131,7 @@ export const useAuthStore = create<AuthState>()(
         }
         
         try {
-          const user = await authApi.getCurrentUser(tokens.access_token);
+          const user = await authService.getCurrentUser(tokens.access_token);
           set({ user });
           return user;
         } catch (error) {

@@ -1,4 +1,4 @@
-import { useAuthStore } from '@/lib/auth-store'
+import { useAuthStore } from '@/stores/auth.store'
 
 export const useAuth = () => {
   const store = useAuthStore()

@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox'
 import { Separator } from '@/components/ui/separator'
 import { Eye, EyeOff, Mail, Lock, User, Chrome } from 'lucide-react'
-import { useAuthStore } from '@/lib/auth-store'
+import { useAuthStore } from '@/stores/auth.store'
 import { useRouter } from 'next/navigation'
 
 interface AuthInterfaceProps {
