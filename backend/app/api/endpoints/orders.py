@@ -1,0 +1,342 @@
+from fastapi import APIRouter, HTTPException, Depends, status, Query
+import logging
+from typing import List
+from app.core.config import settings
+from app.api.dependencies.auth import get_current_user
+from app.models.auth import UserResponse
+from app.models.orders import (
+    OrderCreate, 
+    OrderUpdate, 
+    OrderResponse, 
+    OrdersListResponse,
+    OrderDeleteResponse,
+    OrderStatus
+)
+from app.db.orders import OrdersConnection
+
+# Configure logging
+logging.basicConfig(level=getattr(logging, settings.LOG_LEVEL))
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
+
+def get_orders_db() -> OrdersConnection:
+    """Dependency to get OrdersConnection instance"""
+    return OrdersConnection()
+
+# CREATE - Add new order
+@router.post("/", response_model=OrderResponse, status_code=status.HTTP_201_CREATED)
+async def create_order(
+    order: OrderCreate,
+    current_user: UserResponse = Depends(get_current_user),
+    orders_db: OrdersConnection = Depends(get_orders_db)
+):
+    """Create a new order"""
+    try:
+        logger.info(f"Creating order for business {order.business_id}")
+        logger.debug(f"Order data: {order.model_dump()}")
+        
+        # Create order data
+        order_data = {
+            "business_id": order.business_id,
+            "customer_id": order.customer_id,
+            "total_amount": float(order.total_amount),
+            "special_instructions": order.special_instructions,
+            "pickup_time": order.pickup_time,
+            "status": "pending"
+        }
+        
+        # Create the order
+        result = await orders_db.create_order(order_data)
+        
+        if not result:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Failed to create order"
+            )
+        
+        # Create order items
+        order_items_data = []
+        for item in order.items:
+            order_items_data.append({
+                "order_id": result["id"],
+                "menu_item_id": item.menu_item_id,
+                "quantity": item.quantity,
+                "special_instructions": item.special_instructions
+            })
+        
+        await orders_db.create_order_items(order_items_data)
+        
+        # Get the complete order with items
+        complete_order = await orders_db.get_order_by_id(result["id"])
+        
+        if not complete_order:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to retrieve created order"
+            )
+        
+        return OrderResponse(**complete_order)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating order: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while creating the order"
+        )
+
+# READ - Get orders for a business (business owner view)
+@router.get("/business/{business_id}", response_model=OrdersListResponse)
+async def get_orders_by_business(
+    business_id: str,
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
+    status_filter: str = Query(None, description="Filter by order status"),
+    current_user: UserResponse = Depends(get_current_user),
+    orders_db: OrdersConnection = Depends(get_orders_db)
+):
+    """Get all orders for a specific business with pagination (business owner view)"""
+    try:
+        # Verify user owns the business
+        if not await orders_db.verify_business_ownership(business_id, current_user.id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You don't have permission to access this business"
+            )
+        
+        # Get orders with pagination
+        result = await orders_db.get_orders_by_business(
+            business_id=business_id,
+            page=page,
+            page_size=page_size,
+            status_filter=status_filter
+        )
+        
+        if not result:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No orders found"
+            )
+        
+        items = [OrderResponse(**item) for item in result["items"]]
+        
+        return OrdersListResponse(
+            items=items,
+            total=result["total"],
+            page=result["page"],
+            page_size=result["page_size"]
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting orders: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while retrieving orders"
+        )
+
+# READ - Get orders for a customer (customer view)
+@router.get("/customer/{customer_id}", response_model=OrdersListResponse)
+async def get_orders_by_customer(
+    customer_id: str,
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
+    status_filter: str = Query(None, description="Filter by order status"),
+    current_user: UserResponse = Depends(get_current_user),
+    orders_db: OrdersConnection = Depends(get_orders_db)
+):
+    """Get all orders for a specific customer with pagination (customer view)"""
+    try:
+        # Verify user is the customer
+        if customer_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can only view your own orders"
+            )
+        
+        # Get orders with pagination
+        result = await orders_db.get_orders_by_customer(
+            customer_id=customer_id,
+            page=page,
+            page_size=page_size,
+            status_filter=status_filter
+        )
+        
+        if not result:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No orders found"
+            )
+        
+        items = [OrderResponse(**item) for item in result["items"]]
+        
+        return OrdersListResponse(
+            items=items,
+            total=result["total"],
+            page=result["page"],
+            page_size=result["page_size"]
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting customer orders: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while retrieving orders"
+        )
+
+# READ - Get single order
+@router.get("/{order_id}", response_model=OrderResponse)
+async def get_order(
+    order_id: str,
+    current_user: UserResponse = Depends(get_current_user),
+    orders_db: OrdersConnection = Depends(get_orders_db)
+):
+    """Get a specific order by ID"""
+    try:
+        # Get the order
+        order = await orders_db.get_order_by_id(order_id)
+        
+        if not order:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Order not found"
+            )
+        
+        # Check if user has access to this order
+        # User can access if they own the business or are the customer
+        business_owner = await orders_db.verify_order_ownership(order_id, current_user.id)
+        customer_access = await orders_db.verify_customer_order_access(order_id, current_user.id)
+        
+        if not business_owner and not customer_access:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You don't have permission to access this order"
+            )
+        
+        return OrderResponse(**order)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting order: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while retrieving the order"
+        )
+
+# UPDATE - Update order (business owner can update status, customer can update pickup time)
+@router.patch("/{order_id}", response_model=OrderResponse)
+async def update_order(
+    order_id: str,
+    order_update: OrderUpdate,
+    current_user: UserResponse = Depends(get_current_user),
+    orders_db: OrdersConnection = Depends(get_orders_db)
+):
+    """Update a specific order"""
+    try:
+        # First verify the order exists
+        order = await orders_db.get_order_by_id(order_id)
+        if not order:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Order not found"
+            )
+        
+        # Check if user has access to this order
+        business_owner = await orders_db.verify_order_ownership(order_id, current_user.id)
+        customer_access = await orders_db.verify_customer_order_access(order_id, current_user.id)
+        
+        if not business_owner and not customer_access:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You don't have permission to access this order"
+            )
+        
+        # Build update data based on user role
+        update_data = {}
+        
+        if business_owner:
+            # Business owners can update status and special instructions
+            if order_update.status is not None:
+                update_data["status"] = order_update.status
+            if order_update.special_instructions is not None:
+                update_data["special_instructions"] = order_update.special_instructions
+        elif customer_access:
+            # Customers can only update pickup time and special instructions
+            if order_update.pickup_time is not None:
+                update_data["pickup_time"] = order_update.pickup_time
+            if order_update.special_instructions is not None:
+                update_data["special_instructions"] = order_update.special_instructions
+        
+        if not update_data:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No fields provided for update"
+            )
+        
+        # Update order
+        result = await orders_db.update_order(order_id, update_data)
+        
+        if not result:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Failed to update order"
+            )
+        
+        # Get updated order with items
+        updated_order = await orders_db.get_order_by_id(order_id)
+        
+        return OrderResponse(**updated_order)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating order: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while updating the order"
+        )
+
+# DELETE - Delete order (only business owners can delete)
+@router.delete("/{order_id}", response_model=OrderDeleteResponse)
+async def delete_order(
+    order_id: str,
+    current_user: UserResponse = Depends(get_current_user),
+    orders_db: OrdersConnection = Depends(get_orders_db)
+):
+    """Delete a specific order (business owners only)"""
+    try:
+        # First verify the order exists and user owns the business
+        if not await orders_db.verify_order_ownership(order_id, current_user.id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You don't have permission to delete this order"
+            )
+        
+        # Delete order
+        result = await orders_db.delete_order(order_id)
+        
+        if not result:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Failed to delete order"
+            )
+        
+        return OrderDeleteResponse(
+            message="Order deleted successfully",
+            deleted_id=order_id
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting order: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while deleting the order"
+        ) 
