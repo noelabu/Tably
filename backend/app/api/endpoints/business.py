@@ -28,7 +28,7 @@ async def health_check():
 
 # Manage endpoint
 @router.post("/manage")
-async def manage(request: ManageRequest):
+async def manage(request: ManageRequest, user = Depends(get_current_user)):
     """
     Insert business information into the database
     """
@@ -45,7 +45,8 @@ async def manage(request: ManageRequest):
             "cuisine_type": request.cuisine_type,
             "open_time": request.open_time,
             "close_time": request.close_time,
-        })
+            "owner_id": user.id
+        }).execute()
         return {"message": "Business managed successfully"}
     except Exception as e:
         logger.error(f"Error managing business: {str(e)}")

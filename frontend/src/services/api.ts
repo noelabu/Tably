@@ -1,5 +1,6 @@
 import axios from 'axios';
 import type { AxiosRequestConfig } from 'axios';
+import { useAuthStore } from '@/stores/auth.store';
 
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -25,6 +26,17 @@ interface ApiService {
   put<T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T>;
   delete<T>(url: string, config?: AxiosRequestConfig): Promise<T>;
   withAuth(token: string): ApiService;
+  // Authenticated request methods
+  authGet<T>(url: string, token: string, config?: AxiosRequestConfig): Promise<T>;
+  authPost<T>(url: string, token: string, data?: any, config?: AxiosRequestConfig): Promise<T>;
+  authPut<T>(url: string, token: string, data?: any, config?: AxiosRequestConfig): Promise<T>;
+  authDelete<T>(url: string, token: string, config?: AxiosRequestConfig): Promise<T>;
+  // Helper methods to get token from auth store
+  getAuthToken(): string | null;
+  authGetWithStore<T>(url: string, config?: AxiosRequestConfig): Promise<T>;
+  authPostWithStore<T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T>;
+  authPutWithStore<T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T>;
+  authDeleteWithStore<T>(url: string, config?: AxiosRequestConfig): Promise<T>;
 }
 
 export const apiService: ApiService = {
@@ -102,5 +114,96 @@ export const apiService: ApiService = {
     };
     
     return authApiService;
+  },
+
+  // Authenticated request methods
+  async authGet<T>(url: string, token: string, config?: AxiosRequestConfig): Promise<T> {
+    return this.request<T>(url, {
+      ...config,
+      headers: {
+        ...config?.headers,
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+  },
+
+  async authPost<T>(url: string, token: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
+    const isFormData = data instanceof FormData;
+    const isURLSearchParams = data instanceof URLSearchParams;
+
+    return this.request<T>(url, {
+      ...config,
+      method: 'POST',
+      data,
+      headers: {
+        ...(!isFormData && !isURLSearchParams && { 'Content-Type': 'application/json' }),
+        ...config?.headers,
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+  },
+
+  async authPut<T>(url: string, token: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
+    return this.request<T>(url, {
+      ...config,
+      method: 'PUT',
+      data,
+      headers: {
+        'Content-Type': 'application/json',
+        ...config?.headers,
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+  },
+
+  async authDelete<T>(url: string, token: string, config?: AxiosRequestConfig): Promise<T> {
+    return this.request<T>(url, {
+      ...config,
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+  },
+
+  // Helper methods to get token from auth store
+  getAuthToken(): string | null {
+    const authStore = useAuthStore.getState();
+    return authStore.tokens?.access_token || null;
+  },
+
+  async authGetWithStore<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
+    const token = this.getAuthToken();
+    if (!token) {
+      throw new Error('No authentication token found in store.');
+    }
+    return this.authGet<T>(url, token, config);
+  },
+
+  async authPostWithStore<T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
+    const token = this.getAuthToken();
+    if (!token) {
+      throw new Error('No authentication token found in store.');
+    }
+    const isFormData = data instanceof FormData;
+    const isURLSearchParams = data instanceof URLSearchParams;
+
+    return this.authPost<T>(url, token, data, config);
+  },
+
+  async authPutWithStore<T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
+    const token = this.getAuthToken();
+    if (!token) {
+      throw new Error('No authentication token found in store.');
+    }
+    return this.authPut<T>(url, token, data, config);
+  },
+
+  async authDeleteWithStore<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
+    const token = this.getAuthToken();
+    if (!token) {
+      throw new Error('No authentication token found in store.');
+    }
+    return this.authDelete<T>(url, token, config);
   },
 };
