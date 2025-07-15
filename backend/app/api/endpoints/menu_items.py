@@ -12,6 +12,7 @@ from app.models.menu_items import (
     MenuItemDeleteResponse
 )
 from app.db.menu_items import MenuItemsConnection
+from app.db.stock_level import StockLevelConnection
 
 # Configure logging
 logging.basicConfig(level=getattr(logging, settings.LOG_LEVEL))
@@ -23,12 +24,17 @@ def get_menu_items_db() -> MenuItemsConnection:
     """Dependency to get MenuItemsConnection instance"""
     return MenuItemsConnection()
 
+def get_stock_level_db() -> StockLevelConnection:
+    """Dependency to get StockLevelConnection instance"""
+    return StockLevelConnection()
+
 # CREATE - Add new menu item
 @router.post("/", response_model=MenuItemResponse, status_code=status.HTTP_201_CREATED)
 async def create_menu_item(
     menu_item: MenuItemCreate,
     current_user: UserResponse = Depends(get_current_user),
-    menu_items_db: MenuItemsConnection = Depends(get_menu_items_db)
+    menu_items_db: MenuItemsConnection = Depends(get_menu_items_db),
+    stock_level_db: StockLevelConnection = Depends(get_stock_level_db)
 ):
     """Create a new menu item for a business"""
     try:
@@ -52,6 +58,14 @@ async def create_menu_item(
         }
         
         result = await menu_items_db.create_menu_item(menu_item_data)
+
+        stock_level_data = {
+          "menu_item_id": result["id"],
+          "quantity_available": menu_item.stock_level.quantity_available,
+          "total_quantity": menu_item.stock_level.total_quantity
+        }
+
+        await stock_level_db.create_stock_level(stock_level_data)
         
         if not result:
             raise HTTPException(

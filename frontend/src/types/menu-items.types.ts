@@ -7,6 +7,11 @@ export interface MenuItem {
   image_url?: string;
   available: boolean;
   created_at: string;
+  quantity?: number;
+  stock_level?: {
+    quantity_available: number;
+    total_quantity: number;
+  };
 }
 
 export interface MenuItemCreate {
@@ -16,6 +21,11 @@ export interface MenuItemCreate {
   price: number;
   image_url?: string;
   available?: boolean;
+  quantity?: number;
+  stock_level?: {
+    quantity_available: number;
+    total_quantity: number;
+  }
 }
 
 export interface MenuItemUpdate {
@@ -24,6 +34,7 @@ export interface MenuItemUpdate {
   price?: number;
   image_url?: string;
   available?: boolean;
+  quantity?: number;
 }
 
 export interface MenuItemsListResponse {
