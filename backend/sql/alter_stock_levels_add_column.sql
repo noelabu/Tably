@@ -1,0 +1,1 @@
+ALTER TABLE stock_levels ADD COLUMN total_quantity integer default 0;

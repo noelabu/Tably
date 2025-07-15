@@ -2,7 +2,7 @@ import axios from 'axios';
 import type { AxiosRequestConfig } from 'axios';
 import { useAuthStore } from '@/stores/auth.store';
 
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
 
 export class ApiError extends Error {
   constructor(
@@ -38,6 +38,8 @@ interface ApiService {
   authPostWithStore<T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T>;
   authPutWithStore<T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T>;
   authDeleteWithStore<T>(url: string, config?: AxiosRequestConfig): Promise<T>;
+  authPatchWithStore<T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T>;
+  authPatch<T>(url: string, token: string, data?: any, config?: AxiosRequestConfig): Promise<T>;
 }
 
 export const apiService: ApiService = {
@@ -179,6 +181,19 @@ export const apiService: ApiService = {
     });
   },
 
+  async authPatch<T>(url: string, token: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
+    return this.request<T>(url, {
+      ...config,
+      method: 'PATCH',
+      data,
+      headers: {
+        'Content-Type': 'application/json',
+        ...config?.headers,
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+  },
+
   // Helper methods to get token from auth store
   getAuthToken(): string | null {
     const authStore = useAuthStore.getState();
@@ -218,5 +233,13 @@ export const apiService: ApiService = {
       throw new Error('No authentication token found in store.');
     }
     return this.authDelete<T>(url, token, config);
+  },
+
+  async authPatchWithStore<T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
+    const token = this.getAuthToken();
+    if (!token) {
+      throw new Error('No authentication token found in store.');
+    }
+    return this.authPatch<T>(url, token, data, config);
   },
 };

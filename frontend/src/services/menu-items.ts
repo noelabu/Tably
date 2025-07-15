@@ -11,7 +11,7 @@ import {
 export const menuItemsService = {
   // Create a new menu item
   async createMenuItem(token: string, menuItem: MenuItemCreate): Promise<MenuItem> {
-    return apiService.withAuth(token).post<MenuItem>('/api/v1/menu-items/', menuItem);
+    return apiService.authPostWithStore<MenuItem>('/api/v1/menu-items/', menuItem);
   },
 
   // Get menu items for a specific business

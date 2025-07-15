@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -19,11 +19,13 @@ import {
   ArrowRight,
   FileUp,
   Utensils,
-  Settings
+  Settings,
+  Loader2
 } from 'lucide-react';
 import { useBusinessStore } from '@/stores/business.store';
 
 interface FormData {
+  id?: string; // hidden value for business id
   businessName: string;
   address: string;
   city: string;
@@ -45,26 +47,47 @@ const cuisineTypes = [
 interface BusinessManageProps {
   isOpen: boolean;
   onClose: () => void;
+  business?: import('@/types/business').Business | null;
 }
 
-export default function BusinessManage({ isOpen, onClose }: BusinessManageProps) {
+export default function BusinessManage({ isOpen, onClose, business }: BusinessManageProps) {
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState<FormData>({
-    businessName: '',
-    address: '',
-    city: '',
-    state: '',
-    zipCode: '',
-    phone: '',
-    email: '',
-    cuisineType: '',
-    openTime: '',
-    closeTime: '',
+    id: business?.id,
+    businessName: business?.name || '',
+    address: business?.address || '',
+    city: business?.city || '',
+    state: business?.state || '',
+    zipCode: business?.zip_code || '',
+    phone: business?.phone || '',
+    email: business?.email || '',
+    cuisineType: business?.cuisine_type || '',
+    openTime: business?.open_time || '',
+    closeTime: business?.close_time || '',
     menuType: 'manual',
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const { manage, isLoading } = useBusinessStore();
+  useEffect(() => {
+    if (business) {
+      setFormData({
+        id: business.id,
+        businessName: business.name || '',
+        address: business.address || '',
+        city: business.city || '',
+        state: business.state || '',
+        zipCode: business.zip_code || '',
+        phone: business.phone || '',
+        email: business.email || '',
+        cuisineType: business.cuisine_type || '',
+        openTime: business.open_time || '',
+        closeTime: business.close_time || '',
+        menuType: 'manual',
+      });
+    }
+  }, [business, isOpen]);
+
+  const { manageBusiness, updateBusiness, isLoading } = useBusinessStore();
 
   const validateStep = (step: number): boolean => {
     const newErrors: Record<string, string> = {};
@@ -128,7 +151,12 @@ export default function BusinessManage({ isOpen, onClose }: BusinessManageProps)
   const handleSave = async () => {
     if (validateStep(currentStep)) {
       console.log('Saving business data:', formData);
-      await manage(formData.businessName, formData.address, formData.city, formData.state, formData.zipCode, formData.phone, formData.email, formData.cuisineType, formData.openTime, formData.closeTime);
+
+      if (formData.id == "" || formData.id == undefined) {
+        await manageBusiness(formData.businessName, formData.address, formData.city, formData.state, formData.zipCode, formData.phone, formData.email, formData.cuisineType, formData.openTime, formData.closeTime);
+      } else {
+        await updateBusiness(formData.id, formData.businessName, formData.address, formData.city, formData.state, formData.zipCode, formData.phone, formData.email, formData.cuisineType, formData.openTime, formData.closeTime);
+      }
       onClose();
       setCurrentStep(1);
     }
@@ -504,7 +532,7 @@ export default function BusinessManage({ isOpen, onClose }: BusinessManageProps)
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="min-w-[800px] max-w-6xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-full max-w-6xl sm:min-w-[800px] max-h-[90vh] overflow-y-auto p-4 sm:p-6">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Settings className="h-5 w-5" />
@@ -515,50 +543,57 @@ export default function BusinessManage({ isOpen, onClose }: BusinessManageProps)
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6">
-          {/* Progress Bar */}
-          <div className="space-y-4">
-            <div className="flex justify-between">
-              <span className="text-sm font-medium">Step {currentStep} of 4</span>
-              <span className="text-sm text-muted-foreground">{Math.round(progressPercentage)}% Complete</span>
-            </div>
-            <Progress value={progressPercentage} className="h-2" />
+        {isLoading && isOpen ? (
+          <div className="flex flex-col items-center justify-center py-16">
+            <Loader2 className="h-10 w-10 animate-spin text-emerald-600 mb-4" />
+            <span className="text-muted-foreground">Loading business data...</span>
           </div>
+        ) : (
+          <div className="space-y-6">
+            {/* Progress Bar */}
+            <div className="space-y-4">
+              <div className="flex justify-between">
+                <span className="text-sm font-medium">Step {currentStep} of 4</span>
+                <span className="text-sm text-muted-foreground">{Math.round(progressPercentage)}% Complete</span>
+              </div>
+              <Progress value={progressPercentage} className="h-2" />
+            </div>
 
-          {/* Step Content */}
-          <AnimatePresence mode="wait">
-            {renderStepContent()}
-          </AnimatePresence>
+            {/* Step Content */}
+            <AnimatePresence mode="wait">
+              {renderStepContent()}
+            </AnimatePresence>
 
-          {/* Navigation */}
-          <div className="flex justify-between pt-4 border-t">
-            <Button
-              variant="outline"
-              onClick={handlePrevious}
-              disabled={currentStep === 1}
-              className="flex items-center gap-2"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Previous
-            </Button>
-
-            <div className="flex gap-2">
+            {/* Navigation */}
+            <div className="flex justify-between pt-4 border-t">
               <Button
                 variant="outline"
-                onClick={onClose}
+                onClick={handlePrevious}
+                disabled={currentStep === 1}
+                className="flex items-center gap-2"
               >
-                Cancel
+                <ArrowLeft className="h-4 w-4" />
+                Previous
               </Button>
-              <Button
-                onClick={currentStep === 4 ? handleSave : handleNext}
-                className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700"
-              >
-                {currentStep === 4 ? 'Save Changes' : 'Next'}
-                {currentStep !== 4 && <ArrowRight className="h-4 w-4" />}
-              </Button>
+
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={onClose}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={currentStep === 4 ? handleSave : handleNext}
+                  className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700"
+                >
+                  {currentStep === 4 ? 'Save Changes' : 'Next'}
+                  {currentStep !== 4 && <ArrowRight className="h-4 w-4" />}
+                </Button>
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </DialogContent>
     </Dialog>
   );
