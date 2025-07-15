@@ -1,10 +1,9 @@
-from app.api.endpoints import auth
+from app.api.endpoints import auth, menu_items, menu_image_analysis
 from fastapi import APIRouter
 
 api_router = APIRouter()
 
-# Import and include routers from endpoints
-from app.api.endpoints import auth
-
-# Include the linecoach router with a prefix
+# Include routers with prefixes
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
+api_router.include_router(menu_items.router, prefix="/menu-items", tags=["menu-items"])
+api_router.include_router(menu_image_analysis.router, prefix="/menu-image-analysis", tags=["menu-image-analysis"])

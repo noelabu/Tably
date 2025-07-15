@@ -23,6 +23,7 @@ interface ApiService {
   get<T>(url: string, config?: AxiosRequestConfig): Promise<T>;
   post<T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T>;
   put<T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T>;
+  patch<T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T>;
   delete<T>(url: string, config?: AxiosRequestConfig): Promise<T>;
   withAuth(token: string): ApiService;
 }
@@ -73,6 +74,18 @@ export const apiService: ApiService = {
     return this.request<T>(url, {
       ...config,
       method: 'PUT',
+      data,
+      headers: {
+        'Content-Type': 'application/json',
+        ...config?.headers,
+      },
+    });
+  },
+
+  async patch<T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
+    return this.request<T>(url, {
+      ...config,
+      method: 'PATCH',
       data,
       headers: {
         'Content-Type': 'application/json',

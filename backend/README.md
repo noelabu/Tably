@@ -1,51 +1,27 @@
 # Tably Backend
 
-## Overview
+## 📚 Documentation
 
-Tably is a multi-agent AI system that revolutionizes restaurant ordering by automating and enhancing voice-based experiences across multiple languages, channels, and dietary needs. It addresses critical bottlenecks in high-volume restaurant operations, particularly in dine-in and quick-service restaurants (QSR), where human staff are often impacted by noise, fatigue, and time constraints.
+For comprehensive documentation about the Menu Image Analysis system, see the **[docs/](./docs/)** directory:
 
-The system enables customers to place orders naturally through voice, chat, or UI while providing restaurants with intelligent menu management, real-time stock tracking, and personalized recommendations to maximize order value and customer satisfaction.
+- **[Menu Image Analysis Overview](./docs/MENU_IMAGE_ANALYSIS_SUMMARY.md)** - Complete API reference and implementation guide
+- **[AWS Setup Instructions](./docs/AWS_SETUP_INSTRUCTIONS.md)** - How to configure AWS Bedrock credentials
+- **[PDF Support Features](./docs/PDF_SUPPORT_UPDATE.md)** - PDF processing capabilities and usage
+- **[Amazon Nova Integration](./docs/AMAZON_NOVA_UPDATE.md)** - AI model implementation details
+- **[Demo Scripts](./docs/extract_only_demo.py)** - Python examples for testing endpoints
 
-## Multi-Agent Architecture
+## Backend Overview
 
-Tably employs a sophisticated multi-agent system where specialized AI agents collaborate to deliver a seamless ordering experience:
+This is the FastAPI backend for the Tably multi-agent AI restaurant ordering system. It provides RESTful APIs for menu management, order processing, user authentication, and AI-powered menu image analysis.
 
-### 1. Voice Recognition Agent
-- Processes natural language inputs in multiple languages (English, Spanish, and more)
-- Handles various accents and speech patterns with high accuracy
-- Adapts to noisy environments common in restaurants
-- Provides real-time transcription and intent understanding
+### Key Features
 
-### 2. Menu Intelligence Agent
-- Maintains comprehensive menu knowledge including items, combos, modifiers, and prices
-- Tracks allergen information and nutritional data
-- Manages real-time stock availability and automatically removes out-of-stock items
-- Handles complex menu hierarchies and seasonal variations
-
-### 3. Recommendation Agent
-- Personalizes upsell and cross-sell suggestions based on:
-  - Order history and customer preferences
-  - Time of day and seasonal trends
-  - Current promotions and combo deals
-- Respects dietary constraints and allergen restrictions
-- Optimizes recommendations for both customer satisfaction and order value
-
-### 4. POS Integration Agent
-- Seamlessly integrates with existing restaurant POS systems
-- Synchronizes orders across all channels (drive-thru, phone, kiosk, mobile app)
-- Updates inventory in real-time
-- Manages payment processing and order routing to kitchen systems
-
-## Key Capabilities
-
-- **Multi-Language Support**: Natural language processing in multiple languages with context-aware translations
-- **Omni-Channel Experience**: Consistent ordering across drive-thru, phone, kiosks, and mobile apps
-- **Dietary Intelligence**: Automatic handling of allergies, dietary preferences (vegetarian, vegan, gluten-free)
-- **Real-Time Inventory**: Dynamic menu updates based on stock availability
-- **Accessibility Features**: Support for visually and hearing-impaired customers with adaptive responses
-- **Order Accuracy**: Reduces errors through intelligent confirmation and clarification
-- **Time Estimation**: Provides accurate preparation time estimates and pickup windows
-- **Staff Efficiency**: Reduces workload on human staff, allowing them to focus on food quality and customer service
+- **Menu Image Analysis**: Advanced AI-powered extraction of menu data from images and PDFs using Amazon Nova
+- **Authentication System**: JWT-based authentication with role-based access control
+- **Menu Management**: CRUD operations for menu items with business ownership validation
+- **Database Integration**: Supabase integration for data persistence
+- **Multi-format Support**: Process both image files and PDF menus
+- **Bulk Processing**: Handle multiple files simultaneously
 
 ## Requirements
 
