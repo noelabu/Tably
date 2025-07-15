@@ -1,5 +1,15 @@
 # Tably Backend
 
+## 📚 Documentation
+
+For comprehensive documentation about the Menu Image Analysis system, see the **[docs/](./docs/)** directory:
+
+- **[Menu Image Analysis Overview](./docs/MENU_IMAGE_ANALYSIS_SUMMARY.md)** - Complete API reference and implementation guide
+- **[AWS Setup Instructions](./docs/AWS_SETUP_INSTRUCTIONS.md)** - How to configure AWS Bedrock credentials
+- **[PDF Support Features](./docs/PDF_SUPPORT_UPDATE.md)** - PDF processing capabilities and usage
+- **[Amazon Nova Integration](./docs/AMAZON_NOVA_UPDATE.md)** - AI model implementation details
+- **[Demo Scripts](./docs/extract_only_demo.py)** - Python examples for testing endpoints
+
 ## Overview
 
 Tably is a multi-agent AI system that revolutionizes restaurant ordering by automating and enhancing voice-based experiences across multiple languages, channels, and dietary needs. It addresses critical bottlenecks in high-volume restaurant operations, particularly in dine-in and quick-service restaurants (QSR), where human staff are often impacted by noise, fatigue, and time constraints.
