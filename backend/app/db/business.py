@@ -103,4 +103,46 @@ class BusinessConnection:
     except Exception as e:
       logger.error(f"Error updating business: {str(e)}")
       return None
+
+  async def get_all_businesses(self, page: int = 1, page_size: int = 20):
+    """Get all businesses with pagination (for customers to browse)"""
+    try:
+      # Calculate offset
+      offset = (page - 1) * page_size
+      
+      # Get total count
+      count_response = (
+        self.supabase.table("businesses")
+        .select("*", count="exact")
+        .execute()
+      )
+      total = count_response.count if count_response.count is not None else 0
+      
+      # Get businesses with pagination
+      response = (
+        self.supabase.table("businesses")
+        .select("*")
+        .range(offset, offset + page_size - 1)
+        .order("created_at", desc=True)
+        .execute()
+      )
+
+      if not response.data:
+        return {
+          "items": [],
+          "total": total,
+          "page": page,
+          "page_size": page_size
+        }
+      
+      return {
+        "items": response.data,
+        "total": total,
+        "page": page,
+        "page_size": page_size
+      }
+    
+    except Exception as e:
+      logger.error(f"Error fetching businesses: {str(e)}")
+      return None
       

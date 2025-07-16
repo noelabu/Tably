@@ -13,6 +13,7 @@ from app.models.orders import (
     OrderStatus
 )
 from app.db.orders import OrdersConnection
+from datetime import datetime
 
 # Configure logging
 logging.basicConfig(level=getattr(logging, settings.LOG_LEVEL))
@@ -39,10 +40,8 @@ async def create_order(
         # Create order data
         order_data = {
             "business_id": order.business_id,
-            "customer_id": order.customer_id,
+            "customer_id": current_user.id,  # Use current user as customer
             "total_amount": float(order.total_amount),
-            "special_instructions": order.special_instructions,
-            "pickup_time": order.pickup_time,
             "status": "pending"
         }
         
@@ -75,6 +74,22 @@ async def create_order(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to retrieve created order"
             )
+        
+        # Convert any datetime fields in complete_order to ISO strings for serialization
+        # pickup_time conversion removed
+        if "created_at" in complete_order and isinstance(complete_order["created_at"], (datetime,)):
+            complete_order["created_at"] = complete_order["created_at"].isoformat()
+        if "updated_at" in complete_order and isinstance(complete_order["updated_at"], (datetime,)):
+            complete_order["updated_at"] = complete_order["updated_at"].isoformat()
+        # Also convert in items
+        if "items" in complete_order:
+            for item in complete_order["items"]:
+                if "created_at" in item and isinstance(item["created_at"], (datetime,)):
+                    item["created_at"] = item["created_at"].isoformat()
+        
+        # Remove special_instructions from response serialization if present
+        if "special_instructions" in complete_order:
+            del complete_order["special_instructions"]
         
         return OrderResponse(**complete_order)
         
@@ -189,6 +204,49 @@ async def get_orders_by_customer(
             detail="An error occurred while retrieving orders"
         )
 
+# READ - Get orders for the current customer (using 'me')
+@router.get("/customer/me", response_model=OrdersListResponse)
+async def get_my_orders(
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
+    status_filter: str = Query(None, description="Filter by order status"),
+    current_user: UserResponse = Depends(get_current_user),
+    orders_db: OrdersConnection = Depends(get_orders_db)
+):
+    """Get all orders for the current customer with pagination"""
+    try:
+        # Get orders with pagination
+        result = await orders_db.get_orders_by_customer(
+            customer_id=current_user.id,
+            page=page,
+            page_size=page_size,
+            status_filter=status_filter
+        )
+        
+        if not result:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No orders found"
+            )
+        
+        items = [OrderResponse(**item) for item in result["items"]]
+        
+        return OrdersListResponse(
+            items=items,
+            total=result["total"],
+            page=result["page"],
+            page_size=result["page_size"]
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting customer orders: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while retrieving orders"
+        )
+
 # READ - Get single order
 @router.get("/{order_id}", response_model=OrderResponse)
 async def get_order(
@@ -261,17 +319,12 @@ async def update_order(
         update_data = {}
         
         if business_owner:
-            # Business owners can update status and special instructions
+            # Business owners can update status (special_instructions removed)
             if order_update.status is not None:
                 update_data["status"] = order_update.status
-            if order_update.special_instructions is not None:
-                update_data["special_instructions"] = order_update.special_instructions
         elif customer_access:
-            # Customers can only update pickup time and special instructions
-            if order_update.pickup_time is not None:
-                update_data["pickup_time"] = order_update.pickup_time
-            if order_update.special_instructions is not None:
-                update_data["special_instructions"] = order_update.special_instructions
+            # Customers cannot update any fields except (special_instructions removed)
+            pass
         
         if not update_data:
             raise HTTPException(

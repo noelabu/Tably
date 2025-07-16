@@ -95,6 +95,28 @@ async def get_business(
             detail="Failed to get business"
         )
 
+# READ - Get business by ID (for customer browsing)
+@router.get("/{business_id}", response_model=BusinessResponse)
+async def get_business_by_id(
+    business_id: str,
+    business_db: BusinessConnection = Depends(get_business_db)
+):
+    """Get a business by its ID (for customer browsing)"""
+    try:
+        result = await business_db.get_business_by_id(business_id)
+        if not result:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Business not found"
+            )
+        return BusinessResponse(**result)
+    except Exception as e:
+        logger.error(f"Error getting business by id: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get business"
+        )
+
 # UPDATE - Update business
 @router.patch("/{business_id}", response_model=BusinessResponse)
 async def update_business(
@@ -152,4 +174,40 @@ async def update_business(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while updating the business"
+        )
+
+# READ - Get all businesses (for customers to browse)
+@router.get("/", response_model=BusinessesListResponse)
+async def get_all_businesses(
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
+    business_db: BusinessConnection = Depends(get_business_db)
+):
+    """Get all businesses with pagination (for customers to browse)"""
+    try:
+        logger.info(f"Getting all businesses, page {page}, size {page_size}")
+        result = await business_db.get_all_businesses(page=page, page_size=page_size)
+        
+        if not result:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to retrieve businesses"
+            )
+        
+        items = [BusinessResponse(**item) for item in result["items"]]
+        
+        return BusinessesListResponse(
+            items=items,
+            total=result["total"],
+            page=result["page"],
+            page_size=result["page_size"]
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting businesses: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while retrieving businesses"
         )
