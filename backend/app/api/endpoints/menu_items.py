@@ -91,10 +91,15 @@ async def get_menu_items_by_business(
     business_id: str,
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
-    available_only: bool = Query(False, description="Show only available items"),
+    available_only: bool = Query(False, description="Only show available items"),
     current_user: UserResponse = Depends(get_current_user),
-    menu_items_db: MenuItemsConnection = Depends(get_menu_items_db)
+    menu_items_db = Depends(get_menu_items_db)
 ):
+    print(f"[DEBUG] business_id: {business_id}")
+    print(f"[DEBUG] page: {page}")
+    print(f"[DEBUG] page_size: {page_size}")
+    print(f"[DEBUG] available_only: {available_only}")
+    print(f"[DEBUG] current_user: {getattr(current_user, 'id', None)}")
     """Get all menu items for a specific business with pagination"""
     try:
         # Verify user owns the business

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import AuthGuard from '@/components/auth-guard'
 import { ShoppingCart, MapPin, Clock, Star, Receipt } from 'lucide-react'
+import Link from 'next/link'
 
 export default function CustomerDashboard() {
   const { user, logout } = useAuth()
@@ -20,13 +21,15 @@ export default function CustomerDashboard() {
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           {/* Quick Actions */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-            <Card className="hover:shadow-md transition-shadow cursor-pointer">
-              <CardContent className="p-6 text-center">
-                <ShoppingCart className="h-8 w-8 text-primary mx-auto mb-2" />
-                <h3 className="font-semibold">Order Food</h3>
-                <p className="text-sm text-muted-foreground">Browse restaurants</p>
-              </CardContent>
-            </Card>
+            <Link href="/customer/orders">
+              <Card className="hover:shadow-md transition-shadow cursor-pointer">
+                <CardContent className="p-6 text-center">
+                  <ShoppingCart className="h-8 w-8 text-primary mx-auto mb-2" />
+                  <h3 className="font-semibold">Order Food</h3>
+                  <p className="text-sm text-muted-foreground">Browse restaurants</p>
+                </CardContent>
+              </Card>
+            </Link>
             
             <Card className="hover:shadow-md transition-shadow cursor-pointer">
               <CardContent className="p-6 text-center">
@@ -36,13 +39,15 @@ export default function CustomerDashboard() {
               </CardContent>
             </Card>
             
-            <Card className="hover:shadow-md transition-shadow cursor-pointer">
-              <CardContent className="p-6 text-center">
-                <Receipt className="h-8 w-8 text-primary mx-auto mb-2" />
-                <h3 className="font-semibold">Order History</h3>
-                <p className="text-sm text-muted-foreground">View past orders</p>
-              </CardContent>
-            </Card>
+            <Link href="/customer/orders/history">
+              <Card className="hover:shadow-md transition-shadow cursor-pointer">
+                <CardContent className="p-6 text-center">
+                  <Receipt className="h-8 w-8 text-primary mx-auto mb-2" />
+                  <h3 className="font-semibold">Order History</h3>
+                  <p className="text-sm text-muted-foreground">View past orders</p>
+                </CardContent>
+              </Card>
+            </Link>
             
             <Card className="hover:shadow-md transition-shadow cursor-pointer">
               <CardContent className="p-6 text-center">
@@ -95,9 +100,11 @@ export default function CustomerDashboard() {
                   </div>
                 </div>
                 
-                <Button variant="outline" className="w-full mt-4">
-                  View All Orders
-                </Button>
+                <Link href="/customer/orders/history" className="w-full">
+                  <Button variant="outline" className="w-full mt-4">
+                    View All Orders
+                  </Button>
+                </Link>
               </CardContent>
             </Card>
 
