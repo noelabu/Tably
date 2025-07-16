@@ -16,25 +16,7 @@ export default function CustomerDashboard() {
   return (
     <AuthGuard requireAuth={true} allowedRoles={['customer']}>
       <div className="min-h-screen bg-background">
-        {/* Header */}
-        <header className="bg-white shadow-sm border-b">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex justify-between items-center h-16">
-              <div className="flex items-center">
-                <h1 className="text-2xl font-bold text-primary">Tably</h1>
-                <span className="ml-2 text-sm text-muted-foreground">Customer</span>
-              </div>
-              <div className="flex items-center space-x-4">
-                <span className="text-sm text-muted-foreground">Welcome, {user?.full_name || user?.email}</span>
-                <Button variant="outline" onClick={handleLogout}>
-                  Logout
-                </Button>
-              </div>
-            </div>
-          </div>
-        </header>
-
-        {/* Main Content */}
+        {/* Remove header here, keep only main content */}
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           {/* Quick Actions */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">

@@ -1,53 +1,20 @@
 "use client"
 
-import React, { useState, useEffect } from 'react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { Separator } from '@/components/ui/separator'
-import { 
-  MessageCircle, 
-  Menu, 
-  Mic, 
-  Send, 
-  Plus, 
-  Minus, 
-  ShoppingCart, 
-  Trash2,
-  Clock,
-  Star,
-  ChefHat,
-  Bot,
-  Send as SendIcon,
-  User,
-  LogOut
-} from 'lucide-react'
-import OrderingChatbotTab from './ordering-chatbot-tab';
-import OrderingMenuTab from './ordering-menu-tab';
-import OrderingVoiceTab from './ordering-voice-tab';
+import React, { useState, useEffect } from 'react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Separator } from '@/components/ui/separator';
+import { MessageCircle, Menu, Mic, Send, Plus, Minus, ShoppingCart, Trash2, Clock, Star, ChefHat, Bot, Send as SendIcon, User, LogOut } from 'lucide-react';
+import OrderingChatbotTab from '@/components/ordering-chatbot-tab';
+import OrderingMenuTab from '@/components/ordering-menu-tab';
+import OrderingVoiceTab from '@/components/ordering-voice-tab';
 import { useAuthStore } from '@/stores/auth.store';
 import { menuItemsService } from '@/services/menu-items';
 import type { MenuItem } from '@/types/menu-items.types';
-
-interface OrderingSystemProps {
-  onLogout?: () => void
-}
-
-// Remove the local MenuItem interface definition
-// interface MenuItem {
-//   id: string
-//   name: string
-//   description: string
-//   price: number
-//   category: string
-//   image?: string
-//   rating?: number
-//   prepTime?: number
-//   popular?: boolean
-// }
 
 // Remove the local CartItem interface and use the imported MenuItem type with an added quantity field
 
@@ -58,23 +25,23 @@ const suggestedResponses = [
   "What are your most popular items?",
   "Do you have any vegetarian options?",
   "What's the total for my order?"
-]
+];
 
-export default function OrderingSystem({ onLogout }: OrderingSystemProps) {
-  const [activeMode, setActiveMode] = useState('chatbot')
-  const [selectedCategory, setSelectedCategory] = useState('All')
-  const [cartItems, setCartItems] = useState<CartItem[]>([])
+export default function OrderFormPage() {
+  const [activeMode, setActiveMode] = useState('chatbot');
+  const [selectedCategory, setSelectedCategory] = useState('All');
+  const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [chatMessages, setChatMessages] = useState([
     {
       id: '1',
       type: 'bot',
       content: "Hi! I'm here to help you order. What can I get for you today?",
-      timestamp: new Date()
-    }
-  ])
-  const [inputMessage, setInputMessage] = useState('')
-  const [isListening, setIsListening] = useState(false)
-  const [transcribedText, setTranscribedText] = useState('')
+      timestamp: new Date(),
+    },
+  ]);
+  const [inputMessage, setInputMessage] = useState('');
+  const [isListening, setIsListening] = useState(false);
+  const [transcribedText, setTranscribedText] = useState('');
 
   // New state for menu items and categories
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
@@ -111,76 +78,76 @@ export default function OrderingSystem({ onLogout }: OrderingSystemProps) {
   }, [token, businessId]);
 
   const addToCart = (item: MenuItem) => {
-    const existingItem = cartItems.find(cartItem => cartItem.id === item.id)
+    const existingItem = cartItems.find(cartItem => cartItem.id === item.id);
     if (existingItem) {
-      setCartItems(cartItems.map(cartItem => 
-        cartItem.id === item.id 
+      setCartItems(cartItems.map(cartItem =>
+        cartItem.id === item.id
           ? { ...cartItem, quantity: cartItem.quantity + 1 }
           : cartItem
-      ))
+      ));
     } else {
-      setCartItems([...cartItems, { ...item, quantity: 1 }])
+      setCartItems([...cartItems, { ...item, quantity: 1 }]);
     }
-  }
+  };
 
   const updateQuantity = (id: string, change: number) => {
     setCartItems(cartItems.map(item => {
       if (item.id === id) {
-        const newQuantity = Math.max(0, item.quantity + change)
-        return newQuantity === 0 ? null : { ...item, quantity: newQuantity }
+        const newQuantity = Math.max(0, item.quantity + change);
+        return newQuantity === 0 ? null : { ...item, quantity: newQuantity };
       }
-      return item
-    }).filter(Boolean) as CartItem[])
-  }
+      return item;
+    }).filter(Boolean) as CartItem[]);
+  };
 
   const removeFromCart = (id: string) => {
-    setCartItems(cartItems.filter(item => item.id !== id))
-  }
+    setCartItems(cartItems.filter(item => item.id !== id));
+  };
 
   const sendMessage = () => {
-    if (!inputMessage.trim()) return
-    
+    if (!inputMessage.trim()) return;
+
     const newMessage = {
       id: Date.now().toString(),
       type: 'user',
       content: inputMessage,
-      timestamp: new Date()
-    }
-    
-    setChatMessages([...chatMessages, newMessage])
-    setInputMessage('')
-    
+      timestamp: new Date(),
+    };
+
+    setChatMessages([...chatMessages, newMessage]);
+    setInputMessage('');
+
     // Simulate bot response
     setTimeout(() => {
       const botResponse = {
         id: (Date.now() + 1).toString(),
         type: 'bot',
         content: "I'd be happy to help! Let me check our menu for you.",
-        timestamp: new Date()
-      }
-      setChatMessages(prev => [...prev, botResponse])
-    }, 1000)
-  }
+        timestamp: new Date(),
+      };
+      setChatMessages(prev => [...prev, botResponse]);
+    }, 1000);
+  };
 
   const handleSuggestedResponse = (response: string) => {
-    setInputMessage(response)
-  }
+    setInputMessage(response);
+  };
 
   const toggleVoiceListening = () => {
-    setIsListening(!isListening)
+    setIsListening(!isListening);
     if (!isListening) {
-      setTranscribedText("Listening... say something like 'I want a burger'")
+      setTranscribedText("Listening... say something like 'I want a burger'");
     } else {
-      setTranscribedText("I want a classic burger with extra cheese")
+      setTranscribedText("I want a classic burger with extra cheese");
     }
-  }
+  };
 
-  const filteredItems = selectedCategory === 'All' 
-    ? menuItems 
-    : menuItems.filter(item => item.category === selectedCategory)
+  const filteredItems = selectedCategory === 'All'
+    ? menuItems
+    : menuItems.filter(item => item.category === selectedCategory);
 
-  const cartTotal = cartItems.reduce((total, item) => total + (item.price * item.quantity), 0)
-  const cartItemCount = cartItems.reduce((total, item) => total + item.quantity, 0)
+  const cartTotal = cartItems.reduce((total, item) => total + (item.price * item.quantity), 0);
+  const cartItemCount = cartItems.reduce((total, item) => total + item.quantity, 0);
 
   return (
     <div className="min-h-screen bg-background">
@@ -198,17 +165,6 @@ export default function OrderingSystem({ onLogout }: OrderingSystemProps) {
                 Cart ({cartItems.reduce((sum, item) => sum + item.quantity, 0)})
               </Button>
             </div>
-            {onLogout && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={onLogout}
-                className="text-red-600 hover:text-red-700 hover:bg-red-50"
-              >
-                <LogOut className="h-4 w-4 mr-1" />
-                Logout
-              </Button>
-            )}
           </div>
         </div>
       </section>
@@ -371,5 +327,5 @@ export default function OrderingSystem({ onLogout }: OrderingSystemProps) {
         </div>
       </div>
     </div>
-  )
+  );
 }

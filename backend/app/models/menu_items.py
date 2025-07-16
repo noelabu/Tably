@@ -10,6 +10,7 @@ class MenuItemBase(BaseModel):
     price: Decimal = Field(..., gt=0, le=9999.99, description="Price of the menu item")
     image_url: Optional[str] = Field(None, description="URL to the menu item image")
     available: bool = Field(True, description="Whether the menu item is available")
+    category: Optional[str] = Field(None, description="Category of the menu item")
 
 class MenuItemCreate(MenuItemBase):
     business_id: str = Field(..., description="ID of the business this menu item belongs to")
@@ -21,6 +22,7 @@ class MenuItemUpdate(BaseModel):
     price: Optional[Decimal] = Field(None, gt=0, le=9999.99, description="Price of the menu item")
     image_url: Optional[str] = Field(None, description="URL to the menu item image")
     available: Optional[bool] = Field(None, description="Whether the menu item is available")
+    category: Optional[str] = Field(None, description="Category of the menu item")
 
 class MenuItemResponse(MenuItemBase):
     id: str

@@ -12,6 +12,7 @@ export interface MenuItem {
     quantity_available: number;
     total_quantity: number;
   };
+  category?: string;
 }
 
 export interface MenuItemCreate {
@@ -25,7 +26,8 @@ export interface MenuItemCreate {
   stock_level?: {
     quantity_available: number;
     total_quantity: number;
-  }
+  };
+  category?: string;
 }
 
 export interface MenuItemUpdate {
@@ -35,6 +37,7 @@ export interface MenuItemUpdate {
   image_url?: string;
   available?: boolean;
   quantity?: number;
+  category?: string;
 }
 
 export interface MenuItemsListResponse {

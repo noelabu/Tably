@@ -54,7 +54,8 @@ async def create_menu_item(
             "description": menu_item.description,
             "price": float(menu_item.price),
             "image_url": menu_item.image_url,
-            "available": menu_item.available
+            "available": menu_item.available,
+            "category": menu_item.category
         }
         
         result = await menu_items_db.create_menu_item(menu_item_data)
@@ -135,6 +136,41 @@ async def get_menu_items_by_business(
             detail="An error occurred while retrieving menu items"
         )
 
+# READ - Get menu items for order form
+@router.get("/order-form/{business_id}/", response_model=MenuItemsListResponse)
+async def get_menu_items_for_order_form(
+    business_id: str,
+    current_user: UserResponse = Depends(get_current_user),
+    menu_items_db: MenuItemsConnection = Depends(get_menu_items_db)
+):
+    """Get all menu items for a specific business with pagination"""
+    try:
+        # Get menu items with pagination
+        result = await menu_items_db.get_menu_items_by_business(
+            business_id=business_id,
+            page=1,
+            page_size=1000,
+            available_only=True
+        )
+        
+        items = [MenuItemResponse(**item) for item in result["items"]]
+        
+        return MenuItemsListResponse(
+            items=items,
+            total=result["total"],
+            page=result["page"],
+            page_size=result["page_size"]
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting menu items for order form: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while retrieving menu items for order form"
+        )
+
 # READ - Get single menu item
 @router.get("/{menu_item_id}", response_model=MenuItemResponse)
 async def get_menu_item(
@@ -200,6 +236,8 @@ async def update_menu_item(
             update_data["image_url"] = menu_item_update.image_url
         if menu_item_update.available is not None:
             update_data["available"] = menu_item_update.available
+        if menu_item_update.category is not None:
+            update_data["category"] = menu_item_update.category
         
         if not update_data:
             raise HTTPException(

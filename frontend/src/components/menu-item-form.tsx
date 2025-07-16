@@ -26,6 +26,7 @@ export default function MenuItemForm({ businessId, onSuccess, onCancel, menuItem
     menuItem && (typeof menuItem.quantity === 'number' ? String(menuItem.quantity) : menuItem.stock_level?.quantity_available !== undefined ? String(menuItem.stock_level.quantity_available) : '0')
       || '0'
   );
+  const [category, setCategory] = useState(menuItem?.category || '');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const createMenuItem = useMenuItemsStore((state) => state.createMenuItem);
@@ -43,6 +44,7 @@ export default function MenuItemForm({ businessId, onSuccess, onCancel, menuItem
           price: parseFloat(price),
           image_url: imageUrl,
           available,
+          category,
         };
         if (quantity !== undefined && quantity !== null) {
           updatePayload.quantity = parseInt(quantity, 10);
@@ -57,6 +59,7 @@ export default function MenuItemForm({ businessId, onSuccess, onCancel, menuItem
           image_url: imageUrl,
           available,
           quantity: parseInt(quantity, 10),
+          category,
         });
       }
       onSuccess();
@@ -96,6 +99,10 @@ export default function MenuItemForm({ businessId, onSuccess, onCancel, menuItem
               onChange={e => setQuantity(e.target.value)}
               required
             />
+          </div>
+          <div>
+            <Label htmlFor="category">Category</Label>
+            <Input id="category" value={category} onChange={e => setCategory(e.target.value)} />
           </div>
           <div className="flex items-center gap-2">
             <input id="available" type="checkbox" checked={available} onChange={e => setAvailable(e.target.checked)} />
