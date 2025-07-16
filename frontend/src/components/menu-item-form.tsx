@@ -60,6 +60,10 @@ export default function MenuItemForm({ businessId, onSuccess, onCancel, menuItem
           available,
           quantity: parseInt(quantity, 10),
           category,
+          stock_level: {
+            quantity_available: parseInt(quantity, 10),
+            total_quantity: parseInt(quantity, 10),
+          },
         });
       }
       onSuccess();

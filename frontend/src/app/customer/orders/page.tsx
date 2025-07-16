@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import AuthGuard from '@/components/auth-guard'
 import { businessService } from '@/services/business'
 import { Business } from '@/types/business'
-import { Search, MapPin, Clock, Star, ArrowRight, ShoppingCart } from 'lucide-react'
+import { Search, MapPin, Clock, Star, ArrowRight, ShoppingCart, ChevronRight } from 'lucide-react'
 import Link from 'next/link'
 
 export default function OrdersPage() {
@@ -78,27 +78,14 @@ export default function OrdersPage() {
   return (
     <AuthGuard requireAuth={true} allowedRoles={['customer']}>
       <div className="min-h-screen bg-background">
-        {/* Header */}
-        <header className="bg-white shadow-sm border-b">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex justify-between items-center h-16">
-              <div className="flex items-center">
-                <Link href="/customer/dashboard" className="text-2xl font-bold text-primary">
-                  Tably
-                </Link>
-                <span className="ml-2 text-sm text-muted-foreground">Orders</span>
-              </div>
-              <div className="flex items-center space-x-4">
-                <span className="text-sm text-muted-foreground">Welcome, {user?.full_name || user?.email}</span>
-                <Link href="/customer/dashboard">
-                  <Button variant="outline">Dashboard</Button>
-                </Link>
-              </div>
-            </div>
+        {/* Breadcrumbs */}
+        <nav className="bg-white border-b">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center h-12 space-x-2 text-sm">
+            <Link href="/customer/dashboard" className="text-muted-foreground hover:text-primary">Dashboard</Link>
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+            <span className="text-primary font-medium">Orders</span>
           </div>
-        </header>
-
-        {/* Main Content */}
+        </nav>
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           {/* Search and Filters */}
           <div className="mb-8">
@@ -121,20 +108,18 @@ export default function OrdersPage() {
             </div>
           </div>
 
-          {/* Loading State */}
+          {/* Businesses Grid */}
           {loading && (
             <div className="flex justify-center items-center py-12">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
             </div>
           )}
-
-          {/* Businesses Grid */}
           {!loading && (
             <>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
                 {filteredBusinesses.map((business) => (
                   <Card key={business.id} className="hover:shadow-lg transition-shadow cursor-pointer">
-                    <Link href={`/customer/orders/${business.id}`}>
+                    <Link href={`/customer/order-form/${business.id}`}>
                       <CardHeader className="pb-3">
                         <div className="flex items-start justify-between">
                           <div className="flex-1">
@@ -157,19 +142,16 @@ export default function OrdersPage() {
                             <span className="text-sm text-muted-foreground">Cuisine</span>
                             <Badge variant="outline">{business.cuisine_type}</Badge>
                           </div>
-                          
                           <div className="flex items-center justify-between">
                             <span className="text-sm text-muted-foreground">Hours</span>
                             <span className="text-sm">
                               {business.open_time} - {business.close_time}
                             </span>
                           </div>
-                          
                           <div className="flex items-center justify-between">
                             <span className="text-sm text-muted-foreground">Phone</span>
                             <span className="text-sm">{business.phone}</span>
                           </div>
-                          
                           <div className="pt-3 border-t">
                             <Button className="w-full" size="sm">
                               View Menu
@@ -182,7 +164,6 @@ export default function OrdersPage() {
                   </Card>
                 ))}
               </div>
-
               {/* Pagination */}
               {totalPages > 1 && (
                 <div className="flex justify-center items-center space-x-2">
@@ -194,11 +175,9 @@ export default function OrdersPage() {
                   >
                     Previous
                   </Button>
-                  
                   <span className="text-sm text-muted-foreground">
                     Page {currentPage} of {totalPages}
                   </span>
-                  
                   <Button
                     variant="outline"
                     size="sm"
@@ -209,7 +188,6 @@ export default function OrdersPage() {
                   </Button>
                 </div>
               )}
-
               {/* No Results */}
               {filteredBusinesses.length === 0 && !loading && (
                 <div className="text-center py-12">

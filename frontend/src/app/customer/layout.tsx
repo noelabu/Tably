@@ -1,10 +1,11 @@
-'use client'
+"use client";
 
-import React from 'react';
+import { ReactNode } from 'react';
 import { useAuth } from '@/hooks/use-auth';
 import { Button } from '@/components/ui/button';
+import { Bell } from 'lucide-react';
 
-export default function CustomerLayout({ children }: { children: React.ReactNode }) {
+export default function CustomerLayout({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
 
   const handleLogout = async () => {
@@ -12,8 +13,9 @@ export default function CustomerLayout({ children }: { children: React.ReactNode
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
-      <header className="bg-white shadow-sm border-b sticky top-0 z-10">
+    <div className="min-h-screen bg-background">
+      {/* Header */}
+      <header className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center">
@@ -21,6 +23,7 @@ export default function CustomerLayout({ children }: { children: React.ReactNode
               <span className="ml-2 text-sm text-muted-foreground">Customer</span>
             </div>
             <div className="flex items-center space-x-4">
+              <Bell className="h-5 w-5 text-muted-foreground" />
               <span className="text-sm text-muted-foreground">Welcome, {user?.full_name || user?.email || 'Guest'}</span>
               {user && (
                 <Button variant="outline" onClick={handleLogout}>
@@ -31,10 +34,7 @@ export default function CustomerLayout({ children }: { children: React.ReactNode
           </div>
         </div>
       </header>
-      {/* Add padding-top to prevent overlap with sticky header */}
-      <main className="flex-1 w-full max-w-7xl mx-auto p-4 pt-8 sm:pt-10 lg:pt-12">
-        {children}
-      </main>
+      {children}
     </div>
   );
 } 

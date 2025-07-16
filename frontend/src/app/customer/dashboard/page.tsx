@@ -17,7 +17,14 @@ export default function CustomerDashboard() {
   return (
     <AuthGuard requireAuth={true} allowedRoles={['customer']}>
       <div className="min-h-screen bg-background">
-        {/* Remove header here, keep only main content */}
+        {/* Navigation Bar */}
+        <nav className="bg-white border-b">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center h-12">
+            <Link href="/customer/dashboard" className="text-sm font-medium text-primary mr-6">Dashboard</Link>
+            <Link href="/customer/orders" className="text-sm font-medium text-muted-foreground hover:text-primary">Orders</Link>
+            <span className="ml-auto text-xs text-muted-foreground">/ Dashboard</span>
+          </div>
+        </nav>
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           {/* Quick Actions */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
