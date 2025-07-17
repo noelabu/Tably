@@ -1,34 +1,39 @@
 from strands import Agent, tool
 from strands_tools import retrieve, http_request
+from app.agents.config import bedrock_model
 
 # Define specialized system prompts
-RESEARCH_ASSISTANT_PROMPT = """
-You are a specialized research assistant. Focus only on providing
-factual, well-sourced information in response to research questions.
-Always cite your sources when possible.
-"""
-
-PRODUCT_RECOMMENDATION_PROMPT = """
+ORDER_RECOMMENDATION_PROMPT = """
 You are a specialized product recommendation assistant.
 Provide personalized product suggestions based on user preferences.
 Justify your recommendations clearly.
 """
 
-TRAVEL_PLANNING_PROMPT = """
-You are a specialized travel planning assistant.
-Create detailed travel itineraries and recommendations based on user preferences.
-Be specific and helpful.
+ORDER_TRANSLATION_PROMPT = """
+You are a specialized order translation assistant.
+When a user asks in a language other than English, translate their request into English.
+Respond on the same language as the user as well as the english translation.
+Always ensure the translation is accurate and contextually appropriate.
+If the user asks for a translation, provide it in the same language as the original request.
 """
 
-# === Research Assistant ===
+ORDER_DIETARY_PROMPT = """
+You are a specialized dietary assistant.
+When a user asks about dietary preferences or restrictions, provide tailored advice.
+Consider common dietary needs such as vegetarian, vegan, gluten-free, etc.
+Also consider cultural dietary practices and allergies.
+Always ensure the advice is practical and easy to follow.
+"""
+
 @tool
-def research_assistant(query: str) -> str:
+def order_translation_agent(query: str) -> str:
     """
     Process and respond to research-related queries.
     """
     try:
         research_agent = Agent(
-            system_prompt=RESEARCH_ASSISTANT_PROMPT,
+            model=bedrock_model,
+            system_prompt=ORDER_TRANSLATION_PROMPT,
             tools=[retrieve, http_request]
         )
         response = research_agent(query)
@@ -36,15 +41,15 @@ def research_assistant(query: str) -> str:
     except Exception as e:
         return f"Error in research assistant: {str(e)}"
 
-# === Product Recommendation Assistant ===
 @tool
-def product_recommendation_assistant(query: str) -> str:
+def order_recommendation_agent(query: str) -> str:
     """
     Handle product recommendation queries by suggesting appropriate products.
     """
     try:
         product_agent = Agent(
-            system_prompt=PRODUCT_RECOMMENDATION_PROMPT,
+            model=bedrock_model,
+            system_prompt=ORDER_RECOMMENDATION_PROMPT,
             tools=[retrieve, http_request]
         )
         response = product_agent(query)
@@ -52,15 +57,15 @@ def product_recommendation_assistant(query: str) -> str:
     except Exception as e:
         return f"Error in product recommendation: {str(e)}"
 
-# === Trip Planning Assistant ===
 @tool
-def trip_planning_assistant(query: str) -> str:
+def order_dietary_agent(query: str) -> str:
     """
     Create travel itineraries and provide travel advice.
     """
     try:
         travel_agent = Agent(
-            system_prompt=TRAVEL_PLANNING_PROMPT,
+            model=bedrock_model,
+            system_prompt=ORDER_DIETARY_PROMPT,
             tools=[retrieve, http_request]
         )
         response = travel_agent(query)
