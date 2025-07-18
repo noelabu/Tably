@@ -6,8 +6,9 @@ import Link from 'next/link';
 import { useCartStore } from '@/stores/cart.store';
 import { ShoppingCart, Minus, Plus, Trash2, ChevronRight } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { useRouter } from 'next/navigation';
+import { useOrderStore } from '@/stores/orders';
+import { OrderCreate, OrderItemCreate } from '@/types/orders';
 
 export default function CheckoutPage() {
   const cartItems = useCartStore((state) => state.items);
@@ -18,6 +19,24 @@ export default function CheckoutPage() {
   const cartItemCount = cartItems.reduce((total, item) => total + item.quantity, 0);
   const router = useRouter();
   const businessId = useCartStore((state) => state.businessId);
+  const { createOrder, isLoading } = useOrderStore();
+
+  const orderItems: OrderItemCreate[] = cartItems.map((item) => ({
+    menu_item_id: item.id,
+    quantity: item.quantity,
+    price_at_order: Number(item.price),
+  }));
+
+  const order: OrderCreate = {
+    business_id: businessId || '',
+    total_amount: cartTotal,
+    status: 'pending',
+    order_items: orderItems,
+  }
+
+  const handleConfirmOrder = () => {
+    createOrder(order);
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -129,7 +148,7 @@ export default function CheckoutPage() {
             <div className="mb-6 text-muted-foreground">
               (Add delivery address, payment, etc. here)
             </div>
-            <Button className="w-full bg-primary hover:bg-primary/90" size="lg" onClick={() => { clearCart(); router.push('/customer/orders'); }}>
+            <Button className="w-full bg-primary hover:bg-primary/90" size="lg" onClick={handleConfirmOrder}>
               Confirm Order
             </Button>
             <Link href="/customer/orders" className="block mt-4 text-center text-primary hover:underline">

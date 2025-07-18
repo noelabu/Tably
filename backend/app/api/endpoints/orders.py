@@ -12,7 +12,10 @@ from app.models.orders import (
     OrderDeleteResponse,
     OrderStatus
 )
+from app.models.order_items import OrderItemCreate
 from app.db.orders import OrdersConnection
+from app.db.order_items import OrderItemsConnection
+from app.db.stock_level import StockLevelConnection
 from datetime import datetime
 
 # Configure logging
@@ -25,12 +28,22 @@ def get_orders_db() -> OrdersConnection:
     """Dependency to get OrdersConnection instance"""
     return OrdersConnection()
 
+def get_order_items_db() -> OrderItemsConnection:
+    """Dependency to get OrderItemsConnection instance"""
+    return OrderItemsConnection()
+
+def get_stock_level_db() -> StockLevelConnection:
+    """Dependency to get StockLevelConnection instance"""
+    return StockLevelConnection()
+
 # CREATE - Add new order
 @router.post("/", response_model=OrderResponse, status_code=status.HTTP_201_CREATED)
 async def create_order(
     order: OrderCreate,
     current_user: UserResponse = Depends(get_current_user),
-    orders_db: OrdersConnection = Depends(get_orders_db)
+    orders_db: OrdersConnection = Depends(get_orders_db),
+    order_items_db: OrderItemsConnection = Depends(get_order_items_db),
+    stock_level_db: StockLevelConnection = Depends(get_stock_level_db)
 ):
     """Create a new order"""
     try:
@@ -56,16 +69,28 @@ async def create_order(
         
         # Create order items
         order_items_data = []
-        for item in order.items:
+        for item in order.order_items:
             order_items_data.append({
                 "order_id": result["id"],
                 "menu_item_id": item.menu_item_id,
                 "quantity": item.quantity,
-                "special_instructions": item.special_instructions
+                "price_at_order": float(item.price_at_order)
             })
         
-        await orders_db.create_order_items(order_items_data)
+        await order_items_db.create_order_items(order_items_data)
         
+        # Update stock level
+        for item in order.order_items:
+            stock_level = await stock_level_db.get_stock_level_by_menu_item_id(item.menu_item_id)
+            if stock_level:
+                stock_level["quantity_available"] -= item.quantity
+                await stock_level_db.update_stock_level(stock_level)
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Stock level not found"
+                )
+
         # Get the complete order with items
         complete_order = await orders_db.get_order_by_id(result["id"])
         
@@ -79,17 +104,12 @@ async def create_order(
         # pickup_time conversion removed
         if "created_at" in complete_order and isinstance(complete_order["created_at"], (datetime,)):
             complete_order["created_at"] = complete_order["created_at"].isoformat()
-        if "updated_at" in complete_order and isinstance(complete_order["updated_at"], (datetime,)):
-            complete_order["updated_at"] = complete_order["updated_at"].isoformat()
         # Also convert in items
         if "items" in complete_order:
             for item in complete_order["items"]:
                 if "created_at" in item and isinstance(item["created_at"], (datetime,)):
                     item["created_at"] = item["created_at"].isoformat()
-        
-        # Remove special_instructions from response serialization if present
-        if "special_instructions" in complete_order:
-            del complete_order["special_instructions"]
+                    
         
         return OrderResponse(**complete_order)
         

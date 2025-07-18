@@ -46,5 +46,19 @@ class StockLevelConnection:
       logger.error(f"Error getting stock level by menu item ID: {str(e)}")
       return None
       
+  async def update_stock_level(self, stock_level_data: Dict[str, Any]):
+    """Update a stock level"""
+    try:
+      response = (
+        self.supabase.table("stock_levels")
+        .update(stock_level_data)
+        .eq("id", stock_level_data["id"])
+        .execute()
+      )
       
+      return response.data[0]
+    
+    except Exception as e:
+      logger.error(f"Error updating stock level: {str(e)}")
+      return None
       

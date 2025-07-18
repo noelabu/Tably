@@ -31,28 +31,9 @@ class OrdersConnection:
             logger.error(f"Error creating order: {str(e)}")
             return None
 
-    async def create_order_items(self, order_items_data: List[Dict[str, Any]]):
-        """Create order items for an order"""
-        try:
-            response = (
-                self.supabase.table("order_items")
-                .insert(order_items_data)
-                .execute()
-            )
-
-            if not response.data:
-                return None
-
-            return response.data
-
-        except Exception as e:
-            logger.error(f"Error creating order items: {str(e)}")
-            return None
-
     async def get_order_by_id(self, order_id: str):
-        """Get an order by ID with items"""
+        """Get an order by ID (order items should be fetched separately)"""
         try:
-            # Get order details
             order_response = (
                 self.supabase.table("orders")
                 .select("*")
@@ -60,23 +41,11 @@ class OrdersConnection:
                 .single()
                 .execute()
             )
-
             if not order_response.data:
                 return None
-
-            # Get order items with menu item details
-            items_response = (
-                self.supabase.table("order_items")
-                .select("*, menu_items(name, price)")
-                .eq("order_id", str(order_id))
-                .execute()
-            )
-
             order_data = order_response.data
-            order_data["items"] = items_response.data if items_response.data else []
-
+            # Note: order items should be fetched using db/order_items.py
             return order_data
-
         except Exception as e:
             logger.error(f"Error fetching order: {str(e)}")
             return None
@@ -191,24 +160,18 @@ class OrdersConnection:
             return None
 
     async def delete_order(self, order_id: str):
-        """Delete an order and its items"""
+        """Delete an order (order items should be deleted separately)"""
         try:
-            # First delete order items
-            await self.supabase.table("order_items").delete().eq("order_id", str(order_id)).execute()
-            
-            # Then delete the order
+            # Note: order items should be deleted using db/order_items.py before deleting the order
             response = (
                 self.supabase.table("orders")
                 .delete()
                 .eq("id", str(order_id))
                 .execute()
             )
-
             if not response.data:
                 return None
-
             return response.data[0]
-
         except Exception as e:
             logger.error(f"Error deleting order: {str(e)}")
             return None

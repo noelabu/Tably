@@ -14,6 +14,13 @@ export interface OrderItem {
   };
 }
 
+// Type for order item creation (frontend -> backend)
+export interface OrderItemCreate {
+  menu_item_id: string;
+  quantity: number;
+  price_at_order: number;
+}
+
 export interface Order {
   id: string;
   business_id: string;
@@ -38,13 +45,8 @@ export interface Order {
 export interface OrderCreate {
   business_id: string;
   total_amount: number;
-  special_instructions?: string;
-  pickup_time?: string;
-  items: {
-    menu_item_id: string;
-    quantity: number;
-    special_instructions?: string;
-  }[];
+  status?: string;
+  order_items: OrderItemCreate[];
 }
 
 export interface OrderUpdate {
