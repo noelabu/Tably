@@ -310,9 +310,17 @@ export default function MenuList({ businessId }: MenuListProps) {
             </DialogHeader>
             <MenuItemForm
               businessId={businessId}
-              onSuccess={() => {
+              onSuccess={async () => {
                 setShowAddForm(false);
-                // fetchMenuItems(); // This line is removed as per the edit hint
+                // Refetch menu items after add
+                setLoading(true);
+                try {
+                  const res = await menuItemsService.getMenuItemsByBusiness(token, businessId, { page, page_size: itemsPerPage });
+                  setMenuItems(res.items);
+                  setTotal(res.total);
+                  setPage(res.page);
+                } catch {}
+                setLoading(false);
               }}
               onCancel={() => setShowAddForm(false)}
             />
@@ -329,9 +337,17 @@ export default function MenuList({ businessId }: MenuListProps) {
               businessId={businessId}
               menuItem={viewItem}
               editMode={true}
-              onSuccess={() => {
+              onSuccess={async () => {
                 setViewItem(null);
-                // fetchMenuItems(); // This line is removed as per the edit hint
+                // Refetch menu items after edit
+                setLoading(true);
+                try {
+                  const res = await menuItemsService.getMenuItemsByBusiness(token, businessId, { page, page_size: itemsPerPage });
+                  setMenuItems(res.items);
+                  setTotal(res.total);
+                  setPage(res.page);
+                } catch {}
+                setLoading(false);
               }}
               onCancel={() => setViewItem(null)}
             />

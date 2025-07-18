@@ -31,7 +31,7 @@ export interface Order {
   pickup_time?: string;
   created_at: string;
   updated_at: string;
-  items: OrderItem[];
+  order_items: OrderItem[];
   business?: {
     id: string;
     name: string;

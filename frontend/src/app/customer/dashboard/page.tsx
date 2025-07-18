@@ -6,6 +6,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import AuthGuard from '@/components/auth-guard'
 import { ShoppingCart, MapPin, Clock, Star, Receipt } from 'lucide-react'
 import Link from 'next/link'
+import { useEffect, useState } from 'react';
+import { Order } from '@/types/orders';
+import { useOrderStore } from '@/stores/orders';
 
 export default function CustomerDashboard() {
   const { user, logout } = useAuth()
@@ -13,6 +16,27 @@ export default function CustomerDashboard() {
   const handleLogout = async () => {
     await logout()
   }
+
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loadingOrders, setLoadingOrders] = useState(false);
+  const [ordersError, setOrdersError] = useState<string | null>(null);
+  const { getCustomerOrders, isLoading } = useOrderStore();
+
+  useEffect(() => {
+    async function fetchOrders() {
+      setLoadingOrders(true);
+      setOrdersError(null);
+      try {
+        const response = await getCustomerOrders(1, 5);
+        setOrders(response?.items || []);
+      } catch (err) {
+        setOrdersError('Failed to load recent orders.');
+      } finally {
+        setLoadingOrders(false);
+      }
+    }
+    fetchOrders();
+  }, []);
 
   return (
     <AuthGuard requireAuth={true} allowedRoles={['customer']}>
@@ -73,40 +97,33 @@ export default function CustomerDashboard() {
                 <CardDescription>Your latest food orders</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between p-4 border rounded-lg">
-                    <div className="flex items-center space-x-4">
-                      <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
-                        <ShoppingCart className="h-6 w-6 text-orange-600" />
+                {loadingOrders ? (
+                  <div>Loading...</div>
+                ) : ordersError ? (
+                  <div className="text-destructive text-sm">{ordersError}</div>
+                ) : orders.length === 0 ? (
+                  <div className="text-muted-foreground text-sm">No recent orders found.</div>
+                ) : (
+                  <div className="space-y-4">
+                    {orders.map((order) => (
+                      <div key={order.id} className="flex items-center justify-between p-4 border rounded-lg">
+                        <div className="flex items-center space-x-4">
+                          <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
+                            <ShoppingCart className="h-6 w-6 text-orange-600" />
+                          </div>
+                          <div>
+                            <h4 className="font-medium">{order.business?.name || 'Restaurant'}</h4>
+                            <p className="text-sm text-muted-foreground">{order.status.charAt(0).toUpperCase() + order.status.slice(1)} • {new Date(order.created_at).toLocaleString()}</p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-medium">${Number(order.total_amount).toFixed(2)}</p>
+                          <p className="text-sm text-muted-foreground">Order #{order.id.slice(-4)}</p>
+                        </div>
                       </div>
-                      <div>
-                        <h4 className="font-medium">Pizza Palace</h4>
-                        <p className="text-sm text-muted-foreground">Delivered • 2 hours ago</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-medium">$24.99</p>
-                      <p className="text-sm text-muted-foreground">Order #1234</p>
-                    </div>
+                    ))}
                   </div>
-                  
-                  <div className="flex items-center justify-between p-4 border rounded-lg">
-                    <div className="flex items-center space-x-4">
-                      <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
-                        <ShoppingCart className="h-6 w-6 text-green-600" />
-                      </div>
-                      <div>
-                        <h4 className="font-medium">Burger Barn</h4>
-                        <p className="text-sm text-muted-foreground">Delivered • Yesterday</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-medium">$18.50</p>
-                      <p className="text-sm text-muted-foreground">Order #1233</p>
-                    </div>
-                  </div>
-                </div>
-                
+                )}
                 <Link href="/customer/orders/history" className="w-full">
                   <Button variant="outline" className="w-full mt-4">
                     View All Orders
@@ -123,29 +140,8 @@ export default function CustomerDashboard() {
                   <CardDescription>Your go-to places</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        <Star className="h-4 w-4 text-yellow-500" />
-                        <span className="text-sm">Pizza Palace</span>
-                      </div>
-                      <Button size="sm" variant="ghost">Order</Button>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        <Star className="h-4 w-4 text-yellow-500" />
-                        <span className="text-sm">Burger Barn</span>
-                      </div>
-                      <Button size="sm" variant="ghost">Order</Button>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        <Star className="h-4 w-4 text-yellow-500" />
-                        <span className="text-sm">Taco Town</span>
-                      </div>
-                      <Button size="sm" variant="ghost">Order</Button>
-                    </div>
-                  </div>
+                  {/* TODO: Replace with dynamic favorite restaurants when API is available */}
+                  <div className="text-muted-foreground text-sm">No favorite restaurants to display.</div>
                 </CardContent>
               </Card>
 

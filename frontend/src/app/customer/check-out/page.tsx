@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/navigation';
 import { useOrderStore } from '@/stores/orders';
 import { OrderCreate, OrderItemCreate } from '@/types/orders';
+import { useEffect } from 'react';
 
 export default function CheckoutPage() {
   const cartItems = useCartStore((state) => state.items);
@@ -34,8 +35,16 @@ export default function CheckoutPage() {
     order_items: orderItems,
   }
 
-  const handleConfirmOrder = () => {
-    createOrder(order);
+  useEffect(() => {
+    if (!isLoading && cartItems.length === 0) {
+      // If not loading and cart is empty after order, redirect
+      router.push('/customer/dashboard');
+    }
+  }, [isLoading, cartItems.length, router]);
+
+  const handleConfirmOrder = async () => {
+    await createOrder(order);
+    clearCart();
   }
 
   return (
@@ -148,8 +157,17 @@ export default function CheckoutPage() {
             <div className="mb-6 text-muted-foreground">
               (Add delivery address, payment, etc. here)
             </div>
-            <Button className="w-full bg-primary hover:bg-primary/90" size="lg" onClick={handleConfirmOrder}>
-              Confirm Order
+            {isLoading && (
+              <div className="absolute inset-0 bg-white/70 flex items-center justify-center z-10 rounded-lg">
+                <span className="flex items-center gap-2 text-primary font-semibold"><span className="animate-spin h-6 w-6 border-2 border-t-transparent border-primary rounded-full"></span>Placing your order...</span>
+              </div>
+            )}
+            <Button className="w-full bg-primary hover:bg-primary/90" size="lg" onClick={handleConfirmOrder} disabled={isLoading}>
+              {isLoading ? (
+                <span className="flex items-center justify-center"><span className="animate-spin mr-2 h-4 w-4 border-2 border-t-transparent border-white rounded-full"></span>Processing...</span>
+              ) : (
+                'Confirm Order'
+              )}
             </Button>
             <Link href="/customer/orders" className="block mt-4 text-center text-primary hover:underline">
               &larr; Back to Orders

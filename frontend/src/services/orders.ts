@@ -27,7 +27,7 @@ export const ordersService = {
     }
     
     const queryString = queryParams.toString();
-    const url = `/api/v1/orders/customer/me${queryString ? `?${queryString}` : ''}`;
+    const url = `/api/v1/orders/customer`;
     
     return apiService.authGetWithStore<OrdersListResponse>(url);
   },
@@ -45,5 +45,23 @@ export const ordersService = {
   // Delete an order
   async deleteOrder(orderId: string): Promise<OrderDeleteResponse> {
     return apiService.authDeleteWithStore<OrderDeleteResponse>(`/api/v1/orders/${orderId}`);
+  },
+
+  // Get orders for a specific business
+  async getOrdersByBusiness(
+    businessId: string,
+    page: number = 1,
+    page_size: number = 20,
+    status_filter?: string
+  ): Promise<OrdersListResponse> {
+    const queryParams = new URLSearchParams();
+    queryParams.append('page', page.toString());
+    queryParams.append('page_size', page_size.toString());
+    if (status_filter) {
+      queryParams.append('status_filter', status_filter);
+    }
+    const queryString = queryParams.toString();
+    const url = `/api/v1/orders/business/${businessId}${queryString ? `?${queryString}` : ''}`;
+    return apiService.authGetWithStore<OrdersListResponse>(url);
   }
 }; 
