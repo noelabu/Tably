@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
@@ -23,8 +23,12 @@ import {
   Bot,
   Send as SendIcon,
   User,
-  LogOut
+  LogOut,
+  Loader2
 } from 'lucide-react'
+import { useAuth } from '@/hooks/use-auth'
+import { useAuthStore } from '@/stores/auth.store'
+import { OrderingChatService, ChatMessage } from '@/services/ordering-chat'
 
 interface OrderingSystemProps {
   onLogout?: () => void
@@ -98,10 +102,11 @@ const suggestedResponses = [
 ]
 
 export default function OrderingSystem({ onLogout }: OrderingSystemProps) {
+  const { user } = useAuth()
   const [activeMode, setActiveMode] = useState('chatbot')
   const [selectedCategory, setSelectedCategory] = useState('All')
   const [cartItems, setCartItems] = useState<CartItem[]>([])
-  const [chatMessages, setChatMessages] = useState([
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
     {
       id: '1',
       type: 'bot',
@@ -112,6 +117,21 @@ export default function OrderingSystem({ onLogout }: OrderingSystemProps) {
   const [inputMessage, setInputMessage] = useState('')
   const [isListening, setIsListening] = useState(false)
   const [transcribedText, setTranscribedText] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
+  const [chatService, setChatService] = useState<OrderingChatService | null>(null)
+  const [useStreaming, setUseStreaming] = useState(true)
+
+  // Initialize chat service when user is available
+  useEffect(() => {
+    if (user) {
+      // Get the token from the auth store
+      const authStore = useAuthStore.getState()
+      const token = authStore.tokens?.access_token
+      if (token) {
+        setChatService(new OrderingChatService(token))
+      }
+    }
+  }, [user])
 
   const addToCart = (item: MenuItem) => {
     const existingItem = cartItems.find(cartItem => cartItem.id === item.id)
@@ -140,29 +160,114 @@ export default function OrderingSystem({ onLogout }: OrderingSystemProps) {
     setCartItems(cartItems.filter(item => item.id !== id))
   }
 
-  const sendMessage = () => {
-    if (!inputMessage.trim()) return
+  const sendMessage = async () => {
+    if (!inputMessage.trim() || isLoading) return
     
-    const newMessage = {
+    const newMessage: ChatMessage = {
       id: Date.now().toString(),
       type: 'user',
       content: inputMessage,
       timestamp: new Date()
     }
     
-    setChatMessages([...chatMessages, newMessage])
+    setChatMessages(prev => [...prev, newMessage])
+    const currentMessage = inputMessage
     setInputMessage('')
+    setIsLoading(true)
     
-    // Simulate bot response
-    setTimeout(() => {
-      const botResponse = {
+    try {
+      // Only use orchestrator for customers
+      if (user?.role === 'customer' && chatService) {
+        // Build context from recent messages and cart
+        const context = buildChatContext()
+        
+        if (useStreaming) {
+          // Handle streaming response
+          const botMessage: ChatMessage = {
+            id: (Date.now() + 1).toString(),
+            type: 'bot',
+            content: '',
+            timestamp: new Date()
+          }
+          setChatMessages(prev => [...prev, botMessage])
+          
+          try {
+            for await (const chunk of chatService.streamMessage(currentMessage, context)) {
+              if (chunk.type === 'message') {
+                setChatMessages(prev => 
+                  prev.map(msg => 
+                    msg.id === botMessage.id 
+                      ? { ...msg, content: msg.content + chunk.content }
+                      : msg
+                  )
+                )
+              } else if (chunk.type === 'error') {
+                setChatMessages(prev => 
+                  prev.map(msg => 
+                    msg.id === botMessage.id 
+                      ? { ...msg, content: "Sorry, there was an error processing your request." }
+                      : msg
+                  )
+                )
+                break
+              }
+            }
+          } catch (error) {
+            setChatMessages(prev => 
+              prev.map(msg => 
+                msg.id === botMessage.id 
+                  ? { ...msg, content: "Sorry, there was an error processing your request." }
+                  : msg
+              )
+            )
+          }
+        } else {
+          // Handle non-streaming response
+          const response = await chatService.sendMessage(currentMessage, context)
+          const botResponse: ChatMessage = {
+            id: (Date.now() + 1).toString(),
+            type: 'bot',
+            content: response.response,
+            timestamp: new Date()
+          }
+          setChatMessages(prev => [...prev, botResponse])
+        }
+      } else {
+        // Fallback for non-customers or when service not available
+        setTimeout(() => {
+          const botResponse: ChatMessage = {
+            id: (Date.now() + 1).toString(),
+            type: 'bot',
+            content: "I'd be happy to help! Let me check our menu for you.",
+            timestamp: new Date()
+          }
+          setChatMessages(prev => [...prev, botResponse])
+        }, 1000)
+      }
+    } catch (error) {
+      console.error('Error sending message:', error)
+      const errorResponse: ChatMessage = {
         id: (Date.now() + 1).toString(),
         type: 'bot',
-        content: "I'd be happy to help! Let me check our menu for you.",
+        content: "Sorry, there was an error processing your request. Please try again.",
         timestamp: new Date()
       }
-      setChatMessages(prev => [...prev, botResponse])
-    }, 1000)
+      setChatMessages(prev => [...prev, errorResponse])
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const buildChatContext = (): string => {
+    const recentMessages = chatMessages.slice(-5).map(msg => 
+      `${msg.type}: ${msg.content}`
+    ).join('\n')
+    
+    const cartContext = cartItems.length > 0 
+      ? `Current cart: ${cartItems.map(item => `${item.name} x${item.quantity}`).join(', ')}`
+      : 'Cart is empty'
+    
+    return `Recent conversation:\n${recentMessages}\n\n${cartContext}`
   }
 
   const handleSuggestedResponse = (response: string) => {
@@ -247,6 +352,17 @@ export default function OrderingSystem({ onLogout }: OrderingSystemProps) {
               {/* Chatbot Mode */}
               <TabsContent value="chatbot" className="h-full flex flex-col">
                 <div className="flex-1 flex flex-col space-y-4">
+                  {/* AI Assistant Status */}
+                  {user?.role === 'customer' && chatService && (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/50 rounded-lg p-2">
+                      <Bot className="w-4 h-4" />
+                      AI Ordering Assistant Active
+                      <Badge variant="secondary" className="ml-auto">
+                        {useStreaming ? 'Streaming' : 'Standard'}
+                      </Badge>
+                    </div>
+                  )}
+                  
                   {/* Chat Messages */}
                   <ScrollArea className="flex-1 bg-muted rounded-lg p-4">
                     <div className="space-y-4">
@@ -289,12 +405,21 @@ export default function OrderingSystem({ onLogout }: OrderingSystemProps) {
                     <Input
                       value={inputMessage}
                       onChange={(e) => setInputMessage(e.target.value)}
-                      placeholder="Type your message..."
-                      onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+                      placeholder={isLoading ? "Waiting for response..." : "Type your message..."}
+                      onKeyPress={(e) => e.key === 'Enter' && !isLoading && sendMessage()}
+                      disabled={isLoading}
                       className="flex-1"
                     />
-                    <Button onClick={sendMessage} className="bg-primary hover:bg-primary/90">
-                      <SendIcon className="w-4 h-4" />
+                    <Button 
+                      onClick={sendMessage} 
+                      disabled={isLoading || !inputMessage.trim()}
+                      className="bg-primary hover:bg-primary/90"
+                    >
+                      {isLoading ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <SendIcon className="w-4 h-4" />
+                      )}
                     </Button>
                   </div>
                 </div>
