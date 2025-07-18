@@ -16,7 +16,7 @@ class MenuContextService:
     async def get_business_menu_context(self, business_id: str) -> str:
         """
         Fetch and format menu data for a specific business to be used by AI agents.
-        Returns a formatted string containing the menu information.
+        Returns a JSON string containing the menu information.
         """
         try:
             # Get all available menu items for the business
@@ -28,32 +28,38 @@ class MenuContextService:
             )
             
             if not menu_data or not menu_data.get("items"):
-                return "No menu items available at this time."
+                return json.dumps({
+                    "error": "No menu items available at this time.",
+                    "business_id": business_id
+                })
             
             # Format menu items for AI consumption
-            menu_context = self._format_menu_for_ai(menu_data["items"])
+            formatted_menu = self._format_menu_for_ai(menu_data["items"])
             
             # Get business information
             business_info = await self._get_business_info(business_id)
             
-            # Combine business info and menu
-            full_context = f"""
-RESTAURANT INFORMATION:
-{business_info}
-
-CURRENT MENU:
-{menu_context}
-
-Note: Only recommend items from this menu. Prices and availability are current.
-"""
-            return full_context
+            # Create structured response
+            context = {
+                "business_id": business_id,
+                "business_info": business_info,
+                "menu_items": formatted_menu,
+                "total_items": len(menu_data["items"]),
+                "note": "Only recommend items from this menu. Prices and availability are current."
+            }
+            
+            return json.dumps(context, indent=2)
             
         except Exception as e:
             logger.error(f"Error fetching menu context: {str(e)}")
-            return "Unable to fetch menu information at this time."
+            return json.dumps({
+                "error": "Unable to fetch menu information at this time.",
+                "business_id": business_id,
+                "details": str(e)
+            })
     
-    def _format_menu_for_ai(self, menu_items: List[Dict[str, Any]]) -> str:
-        """Format menu items into a structured string for AI processing"""
+    def _format_menu_for_ai(self, menu_items: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Format menu items into structured data for AI processing"""
         
         # Group items by category
         categories = {}
@@ -61,40 +67,37 @@ Note: Only recommend items from this menu. Prices and availability are current.
             category = item.get("category") or "Other"
             if category not in categories:
                 categories[category] = []
-            categories[category].append(item)
-        
-        # Format the menu
-        formatted_menu = []
-        for category, items in categories.items():
-            formatted_menu.append(f"\n{category.upper()}:")
-            formatted_menu.append("-" * 40)
             
-            for item in items:
-                name = item.get('name', 'Unknown Item')
-                price = item.get('price', 0)
-                description = item.get('description') or 'No description available'
-                
-                item_text = f"""
-{name} - ${price:.2f}
-{description}
-"""
-                dietary_info = item.get('dietary_info')
-                if dietary_info:
-                    item_text += f"Dietary Info: {dietary_info}\n"
-                
-                allergens = item.get('allergens')
-                if allergens:
-                    item_text += f"Allergens: {allergens}\n"
-                
-                prep_time = item.get('preparation_time')
-                if prep_time:
-                    item_text += f"Prep Time: {prep_time} minutes\n"
-                
-                formatted_menu.append(item_text)
+            # Clean and structure the item data
+            formatted_item = {
+                "id": item.get("id"),
+                "name": item.get('name', 'Unknown Item'),
+                "price": float(item.get('price', 0)),
+                "description": item.get('description') or 'No description available',
+                "available": item.get('available', True)
+            }
+            
+            # Add optional fields if they exist
+            if item.get('dietary_info'):
+                formatted_item["dietary_info"] = item.get('dietary_info')
+            
+            if item.get('allergens'):
+                formatted_item["allergens"] = item.get('allergens')
+            
+            if item.get('preparation_time'):
+                formatted_item["preparation_time"] = item.get('preparation_time')
+            
+            if item.get('calories'):
+                formatted_item["calories"] = item.get('calories')
+            
+            if item.get('spice_level'):
+                formatted_item["spice_level"] = item.get('spice_level')
+            
+            categories[category].append(formatted_item)
         
-        return "\n".join(formatted_menu)
+        return categories
     
-    async def _get_business_info(self, business_id: str) -> str:
+    async def _get_business_info(self, business_id: str) -> Dict[str, Any]:
         """Get business information"""
         try:
             response = (
@@ -106,23 +109,31 @@ Note: Only recommend items from this menu. Prices and availability are current.
             )
             
             if not response.data:
-                return "Restaurant information not available."
+                return {
+                    "error": "Restaurant information not available.",
+                    "name": "Unknown",
+                    "cuisine_type": "Various",
+                    "description": "No description available",
+                    "operating_hours": "Hours not specified"
+                }
             
             business = response.data
-            name = business.get('name') or 'Unknown'
-            cuisine = business.get('cuisine_type') or 'Various'
-            description = business.get('description') or 'No description available'
-            hours = business.get('operating_hours') or 'Hours not specified'
+            return {
+                "name": business.get('name') or 'Unknown',
+                "cuisine_type": business.get('cuisine_type') or 'Various',
+                "description": business.get('description') or 'No description available',
+                "operating_hours": business.get('operating_hours') or 'Hours not specified'
+            }
             
-            return f"""
-Name: {name}
-Cuisine: {cuisine}
-Description: {description}
-Hours: {hours}
-"""
         except Exception as e:
             logger.error(f"Error fetching business info: {str(e)}")
-            return "Restaurant information not available."
+            return {
+                "error": "Restaurant information not available.",
+                "name": "Unknown",
+                "cuisine_type": "Various",
+                "description": "No description available",
+                "operating_hours": "Hours not specified"
+            }
     
     async def get_menu_item_details(self, business_id: str, item_name: str) -> Optional[Dict[str, Any]]:
         """Get detailed information about a specific menu item"""
