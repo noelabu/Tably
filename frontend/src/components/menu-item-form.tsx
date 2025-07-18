@@ -51,6 +51,7 @@ export default function MenuItemForm({ businessId, onSuccess, onCancel, menuItem
         }
         await updateMenuItem(menuItem.id, updatePayload);
       } else {
+        const qty = parseInt(quantity, 10);
         await createMenuItem({
           business_id: businessId,
           name,
@@ -58,11 +59,11 @@ export default function MenuItemForm({ businessId, onSuccess, onCancel, menuItem
           price: parseFloat(price),
           image_url: imageUrl,
           available,
-          quantity: parseInt(quantity, 10),
+          quantity: qty,
           category,
           stock_level: {
-            quantity_available: parseInt(quantity, 10),
-            total_quantity: parseInt(quantity, 10),
+            quantity_available: qty,
+            total_quantity: qty,
           },
         });
       }

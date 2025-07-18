@@ -243,3 +243,25 @@ export const apiService: ApiService = {
     return this.authPatch<T>(url, token, data, config);
   },
 };
+
+export async function analyzeMenuImage(token: string, file: File) {
+  const formData = new FormData();
+  formData.append('file', file);
+  return apiService.authPost<MenuImageAnalysisResult>(
+    '/api/v1/menu-image-analysis/extract-only',
+    token,
+    formData,
+    { headers: { 'Content-Type': 'multipart/form-data' } }
+  );
+}
+
+export async function bulkAnalyzeMenuImages(token: string, files: File[]) {
+  const formData = new FormData();
+  files.forEach((file) => formData.append('files', file));
+  return apiService.authPost<MenuImageAnalysisResult[]>(
+    '/api/v1/menu-image-analysis/bulk-extract-only',
+    token,
+    formData,
+    { headers: { 'Content-Type': 'multipart/form-data' } }
+  );
+}

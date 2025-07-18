@@ -57,3 +57,26 @@ export interface MenuItemQueryParams {
   page_size?: number;
   available_only?: boolean;
 }
+
+export interface ExtractedMenuItem {
+  name: string;
+  description?: string;
+  price?: number;
+  category?: string;
+  allergens?: string[];
+  ingredients?: string[];
+  modifiers?: any[];
+  combos?: any[];
+  sizes?: any[];
+  quantity?: number;
+}
+
+export interface MenuImageAnalysisResult {
+  restaurant_info?: {
+    restaurant_name?: string;
+    cuisine_type?: string;
+  };
+  menu_items: ExtractedMenuItem[];
+  total_items: number;
+  analysis_confidence?: number;
+}

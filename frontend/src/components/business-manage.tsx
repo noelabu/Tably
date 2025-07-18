@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import { menuItemsService } from '@/services/menu-items';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -20,9 +21,13 @@ import {
   FileUp,
   Utensils,
   Settings,
-  Loader2
+  Loader2,
+  Trash2
 } from 'lucide-react';
 import { useBusinessStore } from '@/stores/business.store';
+import { useAuthStore } from '@/stores/auth.store';
+import { analyzeMenuImage, bulkAnalyzeMenuImages } from '@/services/api';
+import type { MenuImageAnalysisResult, ExtractedMenuItem } from '@/types/menu-items.types';
 
 interface FormData {
   id?: string; // hidden value for business id
@@ -51,6 +56,7 @@ interface BusinessManageProps {
 }
 
 export default function BusinessManage({ isOpen, onClose, business }: BusinessManageProps) {
+  const token = useAuthStore.getState().tokens?.access_token;
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState<FormData>({
     id: business?.id,
@@ -67,6 +73,14 @@ export default function BusinessManage({ isOpen, onClose, business }: BusinessMa
     menuType: 'manual',
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
+  // Add state for image analysis in step 3
+  const [showAnalysisForm, setShowAnalysisForm] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analysisResults, setAnalysisResults] = useState<ExtractedMenuItem[]>([]);
+  const [editedAnalysis, setEditedAnalysis] = useState<ExtractedMenuItem[]>([]);
+  const [extractionCount, setExtractionCount] = useState<number | null>(null);
+  const [menuAnalyzedAndSaved, setMenuAnalyzedAndSaved] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (business) {
@@ -108,8 +122,12 @@ export default function BusinessManage({ isOpen, onClose, business }: BusinessMa
         if (!formData.closeTime) newErrors.closeTime = 'Closing time is required';
         break;
       case 3:
-        if (formData.menuType === 'upload' && !formData.menuFile) {
-          newErrors.menuFile = 'Please upload a menu file';
+        if (
+          formData.menuType === 'upload' &&
+          !formData.menuFile &&
+          !menuAnalyzedAndSaved
+        ) {
+          newErrors.menuFile = 'Please upload a menu file or analyze and save menu items from image.';
         }
         break;
       case 4:
@@ -142,9 +160,84 @@ export default function BusinessManage({ isOpen, onClose, business }: BusinessMa
     const file = event.target.files?.[0];
     if (file) {
       setFormData(prev => ({ ...prev, menuFile: file }));
+      setMenuAnalyzedAndSaved(false);
       if (errors.menuFile) {
         setErrors(prev => ({ ...prev, menuFile: '' }));
       }
+    }
+  };
+
+  const handleAnalyzeMenuImages = async (files: FileList | null) => {
+    setAnalyzing(true);
+    setAnalysisResults([]);
+    setEditedAnalysis([]);
+    setExtractionCount(null);
+    try {
+      let results: MenuImageAnalysisResult[] = [];
+      if (files && files.length === 1) {
+        const res = await analyzeMenuImage(token, files[0]);
+        results = [res];
+      } else if (files && files.length > 1) {
+        results = await bulkAnalyzeMenuImages(token, Array.from(files));
+      }
+      const allItems = results.flatMap(r => r.menu_items || []);
+      setAnalysisResults(allItems);
+      setEditedAnalysis(allItems.map(item => ({ ...item })));
+      setExtractionCount(allItems.length);
+    } catch (err) {
+      alert('Menu analysis failed.');
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+  const handleEditAnalysisItem = (idx: number, field: keyof ExtractedMenuItem, value: any) => {
+    setEditedAnalysis(prev => prev.map((item, i) => i === idx ? { ...item, [field]: value } : item));
+  };
+  const handleSaveAnalyzedMenu = async () => {
+    if (!token) {
+      console.error('No auth token found for menu analysis save.');
+      alert('Authentication error: Please log in again.');
+      return;
+    }
+    setAnalyzing(true);
+    try {
+      await Promise.all(
+        editedAnalysis.map(item =>
+          menuItemsService.createMenuItem(token, {
+            business_id: formData.id!,
+            name: item.name,
+            description: item.description,
+            price: item.price ?? 0,
+            available: true,
+            quantity: item.quantity ?? 0,
+            stock_level: {
+              quantity_available: item.quantity ?? 0,
+              total_quantity: item.quantity ?? 0,
+            },
+          })
+        )
+      );
+      setShowAnalysisForm(false);
+      setAnalysisResults([]);
+      setEditedAnalysis([]);
+      setExtractionCount(null);
+      setMenuAnalyzedAndSaved(true);
+      // Optionally, refresh menu items in dashboard
+    } catch (err) {
+      console.error('Failed to save analyzed menu items:', err);
+      alert('Failed to save analyzed menu items.');
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  const handleDiscardAnalysis = () => {
+    if (window.confirm('Are you sure you want to discard the extracted menu items? This action cannot be undone.')) {
+      setShowAnalysisForm(false);
+      setAnalysisResults([]);
+      setEditedAnalysis([]);
+      setExtractionCount(null);
+      setMenuAnalyzedAndSaved(false);
     }
   };
 
@@ -407,34 +500,161 @@ export default function BusinessManage({ isOpen, onClose, business }: BusinessMa
                 </div>
 
                 {formData.menuType === 'upload' && (
-                  <div className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-8 text-center">
-                    <FileUp className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                    <div className="space-y-2">
-                      <Label htmlFor="menuFile" className="text-sm font-medium cursor-pointer">
-                        Drop your menu file here, or click to browse
-                      </Label>
-                      <p className="text-xs text-muted-foreground">
-                        Supported formats: PDF, DOC, DOCX, JPG, PNG (max 10MB)
-                      </p>
-                      <Input
-                        id="menuFile"
-                        type="file"
-                        accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
-                        onChange={handleFileUpload}
-                        className="hidden"
-                      />
-                    </div>
-                    {formData.menuFile && (
-                      <div className="mt-4">
-                        <Badge variant="secondary" className="bg-emerald-50 text-emerald-700">
-                          {formData.menuFile.name}
-                        </Badge>
+                  <>
+                    <div className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-8 text-center">
+                      <FileUp className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                      <div className="space-y-2">
+                        <Label htmlFor="menuFile" className="text-sm font-medium cursor-pointer">
+                          Drop your menu file here, or click to browse
+                        </Label>
+                        <p className="text-xs text-muted-foreground">
+                          Supported formats: PDF, DOC, DOCX, JPG, PNG (max 10MB)
+                        </p>
+                        <Input
+                          id="menuFile"
+                          type="file"
+                          accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                          onChange={handleFileUpload}
+                          className="hidden"
+                        />
                       </div>
+                      {formData.menuFile && (
+                        <div className="mt-4">
+                          <Badge variant="secondary" className="bg-emerald-50 text-emerald-700">
+                            {formData.menuFile.name}
+                          </Badge>
+                        </div>
+                      )}
+                      {errors.menuFile && (
+                        <p className="text-sm text-destructive mt-2">{errors.menuFile}</p>
+                      )}
+                      <div className="mt-4">
+                        <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => setShowAnalysisForm(true)}>
+                          Analyze Menu from Image
+                        </Button>
+                      </div>
+                    </div>
+                    {showAnalysisForm && (
+                      <Dialog open={showAnalysisForm} onOpenChange={open => {
+                        if (!open && (analysisResults.length > 0 || editedAnalysis.length > 0)) {
+                          handleDiscardAnalysis();
+                        } else if (!open) {
+                          setShowAnalysisForm(false);
+                        } else {
+                          setShowAnalysisForm(true);
+                        }
+                      }}>
+                        <DialogContent className="max-w-7xl min-h-[600px] max-h-[90vh] flex flex-col">
+                          <DialogHeader>
+                            <DialogTitle>Analyze Menu from Image</DialogTitle>
+                          </DialogHeader>
+                          <div className="space-y-4 flex-1 flex flex-col min-h-[400px]">
+                            <div
+                              className="border-2 border-dashed border-emerald-400 rounded-lg p-8 text-center cursor-pointer hover:bg-emerald-50 transition relative"
+                              onClick={() => fileInputRef.current?.click()}
+                              onDragOver={e => { e.preventDefault(); e.stopPropagation(); }}
+                              onDrop={e => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                                  handleAnalyzeMenuImages(e.dataTransfer.files);
+                                }
+                              }}
+                              style={{ minHeight: 120 }}
+                            >
+                              <input
+                                ref={fileInputRef}
+                                type="file"
+                                accept="image/*"
+                                multiple
+                                className="hidden"
+                                onChange={e => handleAnalyzeMenuImages(e.target.files)}
+                                disabled={analyzing}
+                              />
+                              <div className="flex flex-col items-center justify-center h-full">
+                                <span className="text-emerald-600 font-semibold text-lg mb-2">Drop menu images here or click to browse</span>
+                                <span className="text-xs text-muted-foreground">Supported formats: JPG, PNG, WEBP, GIF, BMP (max 10 files)</span>
+                              </div>
+                            </div>
+                            {analyzing && <div className="flex items-center gap-2"><Loader2 className="animate-spin" /> Analyzing...</div>}
+                            {analysisResults.length > 0 && (
+                              <div className="flex flex-col flex-1 min-h-[200px] max-h-[calc(60vh)] overflow-y-auto border rounded-lg p-2 bg-gray-50">
+                                {extractionCount !== null && (
+                                  <div className="mb-2 text-emerald-700 font-semibold">{extractionCount} menu item{extractionCount === 1 ? '' : 's'} extracted from image(s).</div>
+                                )}
+                                <div className="mb-2 text-sm text-yellow-700 bg-yellow-50 border border-yellow-200 rounded px-2 py-1">
+                                  Please specify the available stock (quantity) for each menu item before saving.
+                                </div>
+                                <h3 className="font-semibold mb-2">Extracted Menu Items</h3>
+                                <div className="overflow-x-auto w-full">
+                                  <table className="min-w-full w-full divide-y divide-gray-200 text-base">
+                                    <thead>
+                                      <tr>
+                                        <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">#</th>
+                                        <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                                        <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
+                                        <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Price</th>
+                                        <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
+                                        <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Quantity</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="bg-white divide-y divide-gray-200">
+                                      {editedAnalysis.map((item, idx) => (
+                                        <tr key={idx}>
+                                          <td className="px-2 py-1 text-center font-semibold">{idx + 1}</td>
+                                          <td className="px-2 py-1"><input className="border rounded px-1 py-0.5 w-32" value={item.name} onChange={e => handleEditAnalysisItem(idx, 'name', e.target.value)} required /></td>
+                                          <td className="px-2 py-1"><input className="border rounded px-1 py-0.5 w-48" value={item.description || ''} onChange={e => handleEditAnalysisItem(idx, 'description', e.target.value)} /></td>
+                                          <td className="px-2 py-1"><input className="border rounded px-1 py-0.5 w-20" type="number" step="0.01" value={item.price ?? ''} onChange={e => handleEditAnalysisItem(idx, 'price', parseFloat(e.target.value) || 0)} required min={0.01} /></td>
+                                          <td className="px-2 py-1"><input className="border rounded px-1 py-0.5 w-24" value={item.category || ''} onChange={e => handleEditAnalysisItem(idx, 'category', e.target.value)} /></td>
+                                          <td className="px-2 py-1">
+                                            <input
+                                              className="border rounded px-1 py-0.5 w-20"
+                                              type="number"
+                                              min={0}
+                                              step={1}
+                                              value={item.quantity === undefined ? '' : item.quantity}
+                                              onChange={e => {
+                                                const val = e.target.value;
+                                                setEditedAnalysis(prev => prev.map((itm, i) => i === idx ? { ...itm, quantity: val === '' ? undefined : Math.max(0, parseInt(val) || 0) } : itm));
+                                              }}
+                                              required
+                                            />
+                                          </td>
+                                          <td className="px-2 py-1 text-center">
+                                            <button
+                                              className="text-destructive hover:text-red-700"
+                                              title="Remove this item"
+                                              onClick={() => setEditedAnalysis(prev => prev.filter((_, i) => i !== idx))}
+                                            >
+                                              <Trash2 className="w-4 h-4" />
+                                            </button>
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                                <div className="flex justify-end mt-4">
+                                  <Button
+                                    className="bg-emerald-600 hover:bg-emerald-700"
+                                    style={{ minWidth: 180 }}
+                                    onClick={handleSaveAnalyzedMenu}
+                                    disabled={analyzing || !editedAnalysis.every(item => item.name && (item.price ?? 0) > 0 && item.quantity !== undefined && item.quantity >= 0)}
+                                    title={!editedAnalysis.every(item => item.name && (item.price ?? 0) > 0 && item.quantity !== undefined && item.quantity >= 0) ? 'Please fill all required fields (name, price > 0, quantity >= 0) for all items.' : ''}
+                                  >
+                                    Save All to Menu
+                                  </Button>
+                                  <Button variant="outline" onClick={handleDiscardAnalysis} disabled={analyzing}>
+                                    Discard
+                                  </Button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </DialogContent>
+                      </Dialog>
                     )}
-                    {errors.menuFile && (
-                      <p className="text-sm text-destructive mt-2">{errors.menuFile}</p>
-                    )}
-                  </div>
+                  </>
                 )}
 
                 {formData.menuType === 'manual' && (

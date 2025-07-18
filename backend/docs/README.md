@@ -96,7 +96,7 @@ Authorization: Bearer YOUR_JWT_TOKEN
 - **Bulk Processing**: Maximum 10 files per request
 - **PDF Pages**: Maximum 5 pages processed per PDF
 
-### �� **Technology Stack**
+### 📏 **Technology Stack**
 
 - **AI Model**: Amazon Nova Pro via AWS Bedrock
 - **Framework**: FastAPI (Python)
