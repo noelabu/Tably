@@ -164,6 +164,15 @@ export default function MenuList({ businessId }: MenuListProps) {
   //   setCurrentPage(goToLastPage ? newTotalPages || 1 : (prev) => Math.min(prev, newTotalPages) || 1);
   // };
 
+  const handleDiscardAnalysis = () => {
+    if (window.confirm('Are you sure you want to discard the extracted menu items? This action cannot be undone.')) {
+      setShowAnalysisForm(false);
+      setAnalysisResults([]);
+      setEditedAnalysis([]);
+      setExtractionCount(null);
+    }
+  };
+
   return (
     <div className="max-w-6xl mx-auto py-8">
       <div className="flex items-center gap-2 mb-6">
@@ -175,8 +184,16 @@ export default function MenuList({ businessId }: MenuListProps) {
         <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => setShowAddForm(true)}>+ Add Menu Item</Button>
       </div>
       {showAnalysisForm && (
-        <Dialog open={showAnalysisForm} onOpenChange={() => setShowAnalysisForm(false)}>
-          <DialogContent className="max-w-6xl min-h-[500px] max-h-[80vh] flex flex-col">
+        <Dialog open={showAnalysisForm} onOpenChange={open => {
+          if (!open && (analysisResults.length > 0 || editedAnalysis.length > 0)) {
+            handleDiscardAnalysis();
+          } else if (!open) {
+            setShowAnalysisForm(false);
+          } else {
+            setShowAnalysisForm(true);
+          }
+        }}>
+          <DialogContent className="max-w-7xl min-h-[600px] max-h-[90vh] flex flex-col">
             <DialogHeader>
               <DialogTitle>Analyze Menu from Image</DialogTitle>
             </DialogHeader>
@@ -239,7 +256,29 @@ export default function MenuList({ businessId }: MenuListProps) {
                             <td className="px-2 py-1"><input className="border rounded px-1 py-0.5 w-48" value={item.description || ''} onChange={e => handleEditAnalysisItem(idx, 'description', e.target.value)} /></td>
                             <td className="px-2 py-1"><input className="border rounded px-1 py-0.5 w-20" type="number" step="0.01" value={item.price ?? ''} onChange={e => handleEditAnalysisItem(idx, 'price', parseFloat(e.target.value) || 0)} required min={0.01} /></td>
                             <td className="px-2 py-1"><input className="border rounded px-1 py-0.5 w-24" value={item.category || ''} onChange={e => handleEditAnalysisItem(idx, 'category', e.target.value)} /></td>
-                            <td className="px-2 py-1"><input className="border rounded px-1 py-0.5 w-20" type="number" min={0} step={1} value={item.quantity ?? 0} onChange={e => handleEditAnalysisItem(idx, 'quantity', Math.max(0, parseInt(e.target.value) || 0))} required /></td>
+                            <td className="px-2 py-1">
+                              <input
+                                className="border rounded px-1 py-0.5 w-20"
+                                type="number"
+                                min={0}
+                                step={1}
+                                value={item.quantity === undefined ? '' : item.quantity}
+                                onChange={e => {
+                                  const val = e.target.value;
+                                  setEditedAnalysis(prev => prev.map((itm, i) => i === idx ? { ...itm, quantity: val === '' ? undefined : Math.max(0, parseInt(val) || 0) } : itm));
+                                }}
+                                required
+                              />
+                            </td>
+                            <td className="px-2 py-1 text-center">
+                              <button
+                                className="text-destructive hover:text-red-700"
+                                title="Remove this item"
+                                onClick={() => setEditedAnalysis(prev => prev.filter((_, i) => i !== idx))}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </td>
                           </tr>
                         ))}
                       </tbody>
