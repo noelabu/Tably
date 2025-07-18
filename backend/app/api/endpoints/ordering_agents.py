@@ -16,7 +16,7 @@ from app.agents.ordering_agents import (
     process_multilingual_order,
     order_recommendation_combo
 )
-from app.agents.orchestrator import orchestrator
+from app.agents.orchestrator import orchestrator, create_orchestrator_with_business_context
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -60,6 +60,7 @@ class OrderingResponse(BaseModel):
 class StreamingOrderRequest(BaseModel):
     message: str = Field(..., description="Customer message")
     context: Optional[str] = Field(None, description="Optional context")
+    business_id: Optional[str] = Field(None, description="Business ID for menu context")
 
 @router.post("/order-assistant", response_model=OrderingResponse)
 async def order_assistant_endpoint(
@@ -240,8 +241,14 @@ async def chat_with_ordering_system(
     try:
         logger.info(f"Ordering chat request from user {current_user.id}")
         
+        # Create orchestrator with business context if provided
+        if hasattr(request, 'business_id') and request.business_id:
+            agent = create_orchestrator_with_business_context(request.business_id)
+        else:
+            agent = orchestrator
+        
         # Use the orchestrator for intelligent routing
-        response = orchestrator(request.message)
+        response = agent(request.message)
         
         return {
             "response": str(response),
@@ -266,12 +273,18 @@ async def chat_with_ordering_system_stream(
     Stream chat with the intelligent ordering system for real-time responses.
     """
     try:
-        logger.info(f"Streaming ordering chat request from user {current_user.id}")
+        logger.info(f"Streaming ordering chat request")
         
         async def generate_response():
             try:
+                # Create orchestrator with business context if provided
+                if request.business_id:
+                    agent = create_orchestrator_with_business_context(request.business_id)
+                else:
+                    agent = orchestrator
+                
                 # Use the orchestrator for streaming responses
-                agent_stream = orchestrator.stream_async(request.message)
+                agent_stream = agent.stream_async(request.message)
                 
                 async for event in agent_stream:
                     if "data" in event:
@@ -389,3 +402,4 @@ async def health_check():
             },
             "error": str(e)
         }
+

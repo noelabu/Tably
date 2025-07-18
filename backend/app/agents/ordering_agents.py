@@ -1,10 +1,12 @@
 from strands import Agent, tool
 from app.agents.config import bedrock_model
 from app.services.menu_image_analyzer import MenuImageAnalyzer
+from app.services.menu_context_service import menu_context_service
 from typing import Dict, List, Optional, Any, Union
 import json
 import logging
 from datetime import datetime
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -104,20 +106,40 @@ Format translations clearly with:
 def ordering_assistant_agent(
     customer_request: str, 
     menu_data: Optional[str] = None,
-    order_context: Optional[str] = None
+    order_context: Optional[str] = None,
+    business_id: Optional[str] = None
 ) -> str:
     """
     Intelligent ordering assistant that helps customers place orders efficiently.
     
     Args:
         customer_request: Customer's order request or question
-        menu_data: Optional JSON string containing menu information
+        menu_data: Optional JSON string containing menu information (deprecated - use business_id)
         order_context: Optional context about current order or customer preferences
+        business_id: Optional business ID to fetch menu from database
     """
     try:
         # Build context with menu and order information
         context = ""
-        if menu_data:
+        
+        # Prefer business_id for fetching real menu data
+        if business_id:
+            try:
+                # Run async function in sync context
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                menu_context = loop.run_until_complete(
+                    menu_context_service.get_business_menu_context(business_id)
+                )
+                loop.close()
+                
+                context += f"\n\n{menu_context}"
+                logger.info(f"Loaded menu data for business {business_id}")
+            except Exception as e:
+                logger.error(f"Error loading menu from database: {e}")
+                context += "\nNote: Unable to load restaurant menu. Using general assistance."
+        elif menu_data:
+            # Fallback to provided menu_data if no business_id
             try:
                 parsed_menu = json.loads(menu_data) if isinstance(menu_data, str) else menu_data
                 context += f"""
@@ -128,7 +150,9 @@ AVAILABLE MENU:
 Use this menu information to help customers place accurate orders and make suggestions.
 """
             except json.JSONDecodeError:
-                context += f"\nNote: Menu data provided but could not be parsed."
+                context += "\nNote: Menu data provided but could not be parsed."
+        else:
+            context += "\nNote: No specific restaurant menu available. Using general ordering assistance."
         
         if order_context:
             context += f"""
@@ -162,7 +186,8 @@ def recommendation_agent(
     menu_data: Optional[str] = None,
     dietary_restrictions: Optional[str] = None,
     budget_range: Optional[str] = None,
-    occasion: Optional[str] = None
+    occasion: Optional[str] = None,
+    business_id: Optional[str] = None
 ) -> str:
     """
     Specialized recommendation agent for personalized menu suggestions.
@@ -178,7 +203,23 @@ def recommendation_agent(
         # Build comprehensive context
         context = ""
         
-        if menu_data:
+        # Prefer business_id for fetching real menu data
+        if business_id:
+            try:
+                # Run async function in sync context
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                menu_context = loop.run_until_complete(
+                    menu_context_service.get_business_menu_context(business_id)
+                )
+                loop.close()
+                
+                context += f"\n\n{menu_context}"
+                logger.info(f"Loaded menu data for business {business_id}")
+            except Exception as e:
+                logger.error(f"Error loading menu from database: {e}")
+                context += "\nNote: Unable to load restaurant menu. Using general recommendations."
+        elif menu_data:
             try:
                 parsed_menu = json.loads(menu_data) if isinstance(menu_data, str) else menu_data
                 context += f"""
@@ -189,7 +230,7 @@ AVAILABLE MENU:
 Use this menu to make specific recommendations with accurate prices and descriptions.
 """
             except json.JSONDecodeError:
-                context += f"\nNote: Menu data provided but could not be parsed."
+                context += "\nNote: Menu data provided but could not be parsed."
         
         # Add customer context
         recommendation_context = f"""
@@ -284,7 +325,8 @@ Be especially careful with:
 def process_multilingual_order(
     customer_message: str,
     menu_data: Optional[str] = None,
-    source_language: Optional[str] = None
+    source_language: Optional[str] = None,
+    business_id: Optional[str] = None
 ) -> str:
     """
     Complete multilingual order processing that combines translation and ordering assistance.
@@ -305,7 +347,11 @@ def process_multilingual_order(
         english_order = translation_result
         
         # Now process the translated order
-        order_result = ordering_assistant_agent(english_order, menu_data)
+        order_result = ordering_assistant_agent(
+            english_order, 
+            menu_data=menu_data,
+            business_id=business_id
+        )
         
         # Combine translation and ordering results
         combined_response = f"""
@@ -329,7 +375,8 @@ def order_recommendation_combo(
     customer_preferences: str,
     menu_data: Optional[str] = None,
     dietary_restrictions: Optional[str] = None,
-    language: Optional[str] = None
+    language: Optional[str] = None,
+    business_id: Optional[str] = None
 ) -> str:
     """
     Combined recommendation and ordering assistance with optional translation.
@@ -362,7 +409,8 @@ def order_recommendation_combo(
         # Process as order assistance
         order_help = ordering_assistant_agent(
             f"Based on these recommendations: {recommendations}. Help me place an order.",
-            menu_data
+            menu_data=menu_data,
+            business_id=business_id
         )
         
         # Combine results

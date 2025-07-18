@@ -17,6 +17,8 @@ Your primary capabilities:
 3. Handle orders in multiple languages (automatically detect and respond in the customer's language)
 4. Answer questions about menu items, ingredients, and dietary restrictions
 
+IMPORTANT: When using any tool, always pass the business_id parameter if it's available in your context to ensure you're using the correct restaurant's menu.
+
 ROUTING LOGIC:
 - For general ordering and English queries → Use the ordering_assistant_agent tool
 - For non-English orders or when language translation is needed → Use the process_multilingual_order tool
@@ -36,6 +38,25 @@ orchestrator = Agent(
     ],
     callback_handler=None
 )
+
+def create_orchestrator_with_business_context(business_id: str = None):
+    """
+    Create an orchestrator with business context injected into the system prompt.
+    """
+    context_addition = ""
+    if business_id:
+        context_addition = f"\n\nBUSINESS CONTEXT: You are assisting customers for business ID: {business_id}. Always include business_id='{business_id}' when calling any tool."
+    
+    return Agent(
+        system_prompt=MAIN_SYSTEM_PROMPT + context_addition,
+        model=bedrock_model,
+        tools=[
+            ordering_assistant_agent,
+            process_multilingual_order,
+            order_recommendation_combo
+        ],
+        callback_handler=None
+    )
 
 # Async function that iterates over streamed agent events
 async def process_streaming_response():

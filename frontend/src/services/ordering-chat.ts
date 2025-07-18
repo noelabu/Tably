@@ -10,6 +10,7 @@ export interface ChatMessage {
 export interface ChatRequest {
   message: string;
   context?: string;
+  business_id?: string;
 }
 
 export interface ChatResponse {
@@ -32,23 +33,25 @@ export class OrderingChatService {
     this.token = token;
   }
 
-  async sendMessage(message: string, context?: string): Promise<ChatResponse> {
+  async sendMessage(message: string, context?: string, businessId?: string): Promise<ChatResponse> {
     const request: ChatRequest = {
       message,
-      context
+      context,
+      business_id: businessId
     };
 
     return apiService.withAuth(this.token).post<ChatResponse>('/ordering/chat', request);
   }
 
-  async *streamMessage(message: string, context?: string): AsyncGenerator<StreamingChatResponse, void, unknown> {
+  async *streamMessage(message: string, context?: string, businessId?: string): AsyncGenerator<StreamingChatResponse, void, unknown> {
     const request: ChatRequest = {
       message,
-      context
+      context,
+      business_id: businessId
     };
 
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'}/ordering/chat/stream`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/ordering/chat/stream`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

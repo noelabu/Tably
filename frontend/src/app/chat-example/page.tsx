@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
+import { Separator } from '@/components/ui/separator'
 import { 
   MessageCircle, 
   Send, 
@@ -22,11 +23,13 @@ import { OrderingChatService, ChatMessage } from '@/services/ordering-chat'
 
 export default function ChatExamplePage() {
   const { user, isAuthenticated } = useAuth()
+  const businessId = '5eff8f12-7d43-4b0d-b3f7-e762a7903a82' // Fixed business ID for testing
+  
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
     {
       id: '1',
       type: 'bot',
-      content: "Hello! I'm the AI ordering assistant. This is a test page to demonstrate the streaming chat functionality. Try asking me about menu items, recommendations, or place an order!",
+      content: "Hello! I'm the AI ordering assistant for this restaurant. I have access to our full menu. Try asking me about our pizzas, recommendations, or place an order!",
       timestamp: new Date()
     }
   ])
@@ -42,9 +45,14 @@ export default function ChatExamplePage() {
     if (user && isAuthenticated) {
       const authStore = useAuthStore.getState()
       const token = authStore.tokens?.access_token
+      console.log('Auth state:', { user, isAuthenticated, hasToken: !!token })
+      
       if (token) {
         setChatService(new OrderingChatService(token))
         setConnectionStatus('connected')
+      } else {
+        console.error('No access token found in auth store')
+        setConnectionStatus('error')
       }
     } else {
       setConnectionStatus('disconnected')
@@ -95,7 +103,7 @@ export default function ChatExamplePage() {
         setConnectionStatus('connected')
         
         try {
-          for await (const chunk of chatService.streamMessage(currentMessage, context)) {
+          for await (const chunk of chatService.streamMessage(currentMessage, context, businessId)) {
             if (chunk.type === 'message') {
               setChatMessages(prev => 
                 prev.map(msg => 
@@ -130,7 +138,7 @@ export default function ChatExamplePage() {
         }
       } else {
         // Handle non-streaming response
-        const response = await chatService.sendMessage(currentMessage, context)
+        const response = await chatService.sendMessage(currentMessage, context, businessId)
         const botResponse: ChatMessage = {
           id: (Date.now() + 1).toString(),
           type: 'bot',
@@ -143,10 +151,18 @@ export default function ChatExamplePage() {
     } catch (error) {
       console.error('Error sending message:', error)
       setConnectionStatus('error')
+      
+      let errorMessage = "Sorry, there was an error processing your request."
+      if (error instanceof Error && error.message.includes('401')) {
+        errorMessage = "Authentication error. Please log in again."
+      } else if (error instanceof Error && error.message.includes('403')) {
+        errorMessage = "Access denied. Please check your permissions."
+      }
+      
       const errorResponse: ChatMessage = {
         id: (Date.now() + 1).toString(),
         type: 'bot',
-        content: "Sorry, there was an error processing your request. Please check your connection and try again.",
+        content: errorMessage,
         timestamp: new Date()
       }
       setChatMessages(prev => [...prev, errorResponse])
@@ -176,7 +192,7 @@ export default function ChatExamplePage() {
     return statusMap[connectionStatus]
   }
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated || !user) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <Card className="w-full max-w-md">
@@ -187,9 +203,15 @@ export default function ChatExamplePage() {
             <p className="text-muted-foreground mb-4">
               Please log in to test the chat streaming functionality.
             </p>
-            <Button asChild>
-              <a href="/login">Go to Login</a>
-            </Button>
+            <div className="space-y-2">
+              <Button asChild className="w-full">
+                <a href="/login">Go to Login</a>
+              </Button>
+              <div className="text-xs text-muted-foreground">
+                Current state: {isAuthenticated ? 'authenticated' : 'not authenticated'}, 
+                User: {user ? 'loaded' : 'not loaded'}
+              </div>
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -347,6 +369,23 @@ export default function ChatExamplePage() {
                   <span className="text-sm">Status:</span>
                   <Badge {...getConnectionStatusBadge()} />
                 </div>
+                <Separator className="my-2" />
+                <div className="space-y-1">
+                  <p className="text-xs font-medium">Business ID:</p>
+                  <code className="text-xs bg-muted p-1 rounded block break-all">
+                    {businessId}
+                  </code>
+                </div>
+                <Separator className="my-2" />
+                <div className="space-y-1">
+                  <p className="text-xs font-medium">Debug Info:</p>
+                  <div className="text-xs bg-muted p-2 rounded">
+                    <div>Auth: {isAuthenticated ? '✓' : '✗'}</div>
+                    <div>User: {user ? '✓' : '✗'}</div>
+                    <div>Service: {chatService ? '✓' : '✗'}</div>
+                    <div>Token: {useAuthStore.getState().tokens?.access_token ? '✓' : '✗'}</div>
+                  </div>
+                </div>
               </CardContent>
             </Card>
 
@@ -360,33 +399,33 @@ export default function ChatExamplePage() {
                     variant="outline"
                     size="sm"
                     className="w-full justify-start text-left"
-                    onClick={() => setInputMessage("What's your special today?")}
+                    onClick={() => setInputMessage("What pizzas do you have on the menu?")}
                   >
-                    "What's your special today?"
+                    "What pizzas do you have on the menu?"
                   </Button>
                   <Button
                     variant="outline"
                     size="sm"
                     className="w-full justify-start text-left"
-                    onClick={() => setInputMessage("I want to order a pizza")}
+                    onClick={() => setInputMessage("I want to order a large Margherita pizza")}
                   >
-                    "I want to order a pizza"
+                    "I want to order a large Margherita pizza"
                   </Button>
                   <Button
                     variant="outline"
                     size="sm"
                     className="w-full justify-start text-left"
-                    onClick={() => setInputMessage("Do you have vegetarian options?")}
+                    onClick={() => setInputMessage("Show me your vegetarian options with prices")}
                   >
-                    "Do you have vegetarian options?"
+                    "Show me your vegetarian options with prices"
                   </Button>
                   <Button
                     variant="outline"
                     size="sm"
                     className="w-full justify-start text-left"
-                    onClick={() => setInputMessage("Hola, quiero una pizza margherita")}
+                    onClick={() => setInputMessage("Hola, quiero ver el menú de pizzas")}
                   >
-                    "Hola, quiero una pizza margherita"
+                    "Hola, quiero ver el menú de pizzas"
                   </Button>
                 </div>
               </CardContent>
