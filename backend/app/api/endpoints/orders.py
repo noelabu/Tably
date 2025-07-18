@@ -10,13 +10,20 @@ from app.models.orders import (
     OrderResponse, 
     OrdersListResponse,
     OrderDeleteResponse,
-    OrderStatus
+    OrderStatus,
+    OrderWithBusinessResponse,
+    OrderListBusinessResponse,
+    OrderWithItemsResponse,
+    OrderItemWithMenuName,
 )
 from app.models.order_items import OrderItemCreate
 from app.db.orders import OrdersConnection
 from app.db.order_items import OrderItemsConnection
 from app.db.stock_level import StockLevelConnection
 from datetime import datetime
+from app.db.business import BusinessConnection
+from app.models.business import BusinessResponse
+from pydantic import BaseModel
 
 # Configure logging
 logging.basicConfig(level=getattr(logging, settings.LOG_LEVEL))
@@ -35,6 +42,13 @@ def get_order_items_db() -> OrderItemsConnection:
 def get_stock_level_db() -> StockLevelConnection:
     """Dependency to get StockLevelConnection instance"""
     return StockLevelConnection()
+
+# Response model for a list of OrderResponse
+class OrdersSimpleListResponse(BaseModel):
+    items: List[OrderResponse]
+    total: int
+    page: int
+    page_size: int
 
 # CREATE - Add new order
 @router.post("/", response_model=OrderResponse, status_code=status.HTTP_201_CREATED)
@@ -123,7 +137,7 @@ async def create_order(
         )
 
 # READ - Get orders for a business (business owner view)
-@router.get("/business/{business_id}", response_model=OrdersListResponse)
+@router.get("/business/{business_id}", response_model=OrdersSimpleListResponse)
 async def get_orders_by_business(
     business_id: str,
     page: int = Query(1, ge=1, description="Page number"),
@@ -140,7 +154,6 @@ async def get_orders_by_business(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You don't have permission to access this business"
             )
-        
         # Get orders with pagination
         result = await orders_db.get_orders_by_business(
             business_id=business_id,
@@ -148,22 +161,19 @@ async def get_orders_by_business(
             page_size=page_size,
             status_filter=status_filter
         )
-        
         if not result:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="No orders found"
             )
-        
         items = [OrderResponse(**item) for item in result["items"]]
-        
-        return OrdersListResponse(
+
+        return OrdersSimpleListResponse(
             items=items,
             total=result["total"],
             page=result["page"],
             page_size=result["page_size"]
         )
-        
     except HTTPException:
         raise
     except Exception as e:
@@ -174,101 +184,53 @@ async def get_orders_by_business(
         )
 
 # READ - Get orders for a customer (customer view)
-@router.get("/customer/{customer_id}", response_model=OrdersListResponse)
+@router.get("/customer", response_model=OrdersListResponse)
 async def get_orders_by_customer(
-    customer_id: str,
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
     status_filter: str = Query(None, description="Filter by order status"),
     current_user: UserResponse = Depends(get_current_user),
-    orders_db: OrdersConnection = Depends(get_orders_db)
+    orders_db: OrdersConnection = Depends(get_orders_db),
+    business_db: BusinessConnection = Depends(BusinessConnection)
 ):
     """Get all orders for a specific customer with pagination (customer view)"""
     try:
-        # Verify user is the customer
-        if customer_id != current_user.id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You can only view your own orders"
-            )
-        
-        # Get orders with pagination
-        result = await orders_db.get_orders_by_customer(
-            customer_id=customer_id,
-            page=page,
-            page_size=page_size,
-            status_filter=status_filter
-        )
-        
-        if not result:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="No orders found"
-            )
-        
-        items = [OrderResponse(**item) for item in result["items"]]
-        
-        return OrdersListResponse(
-            items=items,
-            total=result["total"],
-            page=result["page"],
-            page_size=result["page_size"]
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error getting customer orders: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An error occurred while retrieving orders"
-        )
-
-# READ - Get orders for the current customer (using 'me')
-@router.get("/customer/me", response_model=OrdersListResponse)
-async def get_my_orders(
-    page: int = Query(1, ge=1, description="Page number"),
-    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
-    status_filter: str = Query(None, description="Filter by order status"),
-    current_user: UserResponse = Depends(get_current_user),
-    orders_db: OrdersConnection = Depends(get_orders_db)
-):
-    """Get all orders for the current customer with pagination"""
-    try:
-        # Get orders with pagination
         result = await orders_db.get_orders_by_customer(
             customer_id=current_user.id,
             page=page,
             page_size=page_size,
             status_filter=status_filter
         )
-        
+
         if not result:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="No orders found"
             )
-        
-        items = [OrderResponse(**item) for item in result["items"]]
-        
+
+        orders_with_business = []
+        for order in result["items"]:
+            business = await business_db.get_business_by_id(order["business_id"])
+            order["business"] = BusinessResponse(**business) if business else None
+            orders_with_business.append(OrderWithBusinessResponse(**order))
+
         return OrdersListResponse(
-            items=items,
+            items=orders_with_business,
             total=result["total"],
             page=result["page"],
             page_size=result["page_size"]
         )
-        
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error getting customer orders: {str(e)}")
+        logger.error(f"Error getting orders: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while retrieving orders"
         )
 
 # READ - Get single order
-@router.get("/{order_id}", response_model=OrderResponse)
+@router.get("/{order_id}", response_model=OrderWithItemsResponse)
 async def get_order(
     order_id: str,
     current_user: UserResponse = Depends(get_current_user),
@@ -276,27 +238,32 @@ async def get_order(
 ):
     """Get a specific order by ID"""
     try:
-        # Get the order
-        order = await orders_db.get_order_by_id(order_id)
-        
-        if not order:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Order not found"
-            )
-        
-        # Check if user has access to this order
-        # User can access if they own the business or are the customer
-        business_owner = await orders_db.verify_order_ownership(order_id, current_user.id)
-        customer_access = await orders_db.verify_customer_order_access(order_id, current_user.id)
-        
-        if not business_owner and not customer_access:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You don't have permission to access this order"
-            )
-        
-        return OrderResponse(**order)
+        """Get an order by ID, including order items and their menu item names."""
+        data = await orders_db.get_order_with_items_by_id(order_id)
+        if not data:
+            raise HTTPException(status_code=404, detail="Order not found")
+        # Map order_items to requested format
+        order_items = []
+        for item in data.get("order_items", []):
+            menu_item = item.get("menu_items")
+            name = menu_item["name"] if isinstance(menu_item, dict) and "name" in menu_item else ""
+            order_items.append(OrderItemWithMenuName(
+                id=item["id"],
+                order_id=item["order_id"],
+                menu_item_id=item["menu_item_id"],
+                name=name,
+                quantity=item["quantity"],
+                price_at_order=item["price_at_order"],
+            ))
+        return OrderWithItemsResponse(
+            id=data["id"],
+            customer_id=data["customer_id"],
+            business_id=data["business_id"],
+            total_amount=data["total_amount"],
+            status=data["status"],
+            created_at=data["created_at"],
+            order_items=order_items
+        )
         
     except HTTPException:
         raise
@@ -306,6 +273,40 @@ async def get_order(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while retrieving the order"
         )
+
+# New endpoint: Get order with items and menu item names
+@router.get("/with-items/{order_id}", response_model=OrderWithItemsResponse)
+async def get_order_with_items(
+    order_id: str,
+    current_user: UserResponse = Depends(get_current_user),
+    orders_db: OrdersConnection = Depends(get_orders_db)
+):
+    """Get an order by ID, including order items and their menu item names."""
+    data = await orders_db.get_order_with_items_by_id(order_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="Order not found")
+    # Map order_items to requested format
+    order_items = []
+    for item in data.get("order_items", []):
+        menu_item = item.get("menu_items")
+        name = menu_item["name"] if isinstance(menu_item, dict) and "name" in menu_item else ""
+        order_items.append(OrderItemWithMenuName(
+            id=item["id"],
+            order_id=item["order_id"],
+            menu_item_id=item["menu_item_id"],
+            name=name,
+            quantity=item["quantity"],
+            price_at_order=item["price_at_order"],
+        ))
+    return OrderWithItemsResponse(
+        id=data["id"],
+        customer_id=data["customer_id"],
+        business_id=data["business_id"],
+        total_amount=data["total_amount"],
+        status=data["status"],
+        created_at=data["created_at"],
+        order_items=order_items
+    )
 
 # UPDATE - Update order (business owner can update status, customer can update pickup time)
 @router.patch("/{order_id}", response_model=OrderResponse)
@@ -325,27 +326,12 @@ async def update_order(
                 detail="Order not found"
             )
         
-        # Check if user has access to this order
-        business_owner = await orders_db.verify_order_ownership(order_id, current_user.id)
-        customer_access = await orders_db.verify_customer_order_access(order_id, current_user.id)
-        
-        if not business_owner and not customer_access:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You don't have permission to access this order"
-            )
-        
         # Build update data based on user role
         update_data = {}
         
-        if business_owner:
-            # Business owners can update status (special_instructions removed)
-            if order_update.status is not None:
-                update_data["status"] = order_update.status
-        elif customer_access:
-            # Customers cannot update any fields except (special_instructions removed)
-            pass
-        
+        if order_update.status is not None:
+            update_data["status"] = order_update.status
+            
         if not update_data:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,

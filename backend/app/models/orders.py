@@ -4,6 +4,7 @@ from decimal import Decimal
 from datetime import datetime
 from enum import Enum
 from app.models.order_items import OrderItemBase
+from app.models.business import BusinessResponse
 
 class OrderStatus(str, Enum):
     PENDING = "pending"
@@ -53,8 +54,17 @@ class OrderResponse(BaseModel):
     class Config:
         from_attributes = True
 
-class OrdersListResponse(BaseModel):
+class OrderWithBusinessResponse(OrderResponse):
+    business: BusinessResponse
+
+class OrderListBusinessResponse(BaseModel):
     items: List[OrderResponse]
+    total: int
+    page: int
+    page_size: int
+
+class OrdersListResponse(BaseModel):
+    items: List[OrderWithBusinessResponse]
     total: int
     page: int
     page_size: int
@@ -62,3 +72,20 @@ class OrdersListResponse(BaseModel):
 class OrderDeleteResponse(BaseModel):
     message: str
     deleted_id: str 
+
+class OrderItemWithMenuName(BaseModel):
+    id: str
+    order_id: str
+    menu_item_id: str
+    name: str
+    quantity: int
+    price_at_order: Decimal
+
+class OrderWithItemsResponse(BaseModel):
+    id: str
+    customer_id: str
+    business_id: str
+    total_amount: Decimal
+    status: OrderStatus
+    created_at: datetime
+    order_items: List[OrderItemWithMenuName] 

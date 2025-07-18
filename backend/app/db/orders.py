@@ -50,12 +50,30 @@ class OrdersConnection:
             logger.error(f"Error fetching order: {str(e)}")
             return None
 
+    async def get_order_with_items_by_id(self, order_id: str):
+        """Get an order by ID, including order items and their menu items (inner join)"""
+        try:
+            order_response = (
+                self.supabase.table("orders")
+                .select("*, order_items(*, menu_items(*))")
+                .eq("id", str(order_id))
+                .single()
+                .execute()
+            )
+            if not order_response.data:
+                return None
+            order_data = order_response.data
+            return order_data
+        except Exception as e:
+            logger.error(f"Error fetching order with items: {str(e)}")
+            return None
+
     async def get_order_with_business(self, order_id: str):
         """Get an order with business information for ownership verification"""
         try:
             response = (
                 self.supabase.table("orders")
-                .select("*, businesses(owner_id)")
+                .select("*")
                 .eq("id", str(order_id))
                 .single()
                 .execute()
