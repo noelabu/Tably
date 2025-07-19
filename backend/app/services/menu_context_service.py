@@ -102,7 +102,7 @@ class MenuContextService:
         try:
             response = (
                 self.supabase.table("businesses")
-                .select("name, description, cuisine_type, operating_hours")
+                .select("name, description, cuisine_type")
                 .eq("id", business_id)
                 .single()
                 .execute()
@@ -113,16 +113,14 @@ class MenuContextService:
                     "error": "Restaurant information not available.",
                     "name": "Unknown",
                     "cuisine_type": "Various",
-                    "description": "No description available",
-                    "operating_hours": "Hours not specified"
+                    "description": "No description available"
                 }
             
             business = response.data
             return {
                 "name": business.get('name') or 'Unknown',
                 "cuisine_type": business.get('cuisine_type') or 'Various',
-                "description": business.get('description') or 'No description available',
-                "operating_hours": business.get('operating_hours') or 'Hours not specified'
+                "description": business.get('description') or 'No description available'
             }
             
         except Exception as e:
@@ -131,8 +129,7 @@ class MenuContextService:
                 "error": "Restaurant information not available.",
                 "name": "Unknown",
                 "cuisine_type": "Various",
-                "description": "No description available",
-                "operating_hours": "Hours not specified"
+                "description": "No description available"
             }
     
     async def get_menu_item_details(self, business_id: str, item_name: str) -> Optional[Dict[str, Any]]:

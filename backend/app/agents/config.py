@@ -12,6 +12,6 @@ session = boto3.Session(
 
 # Create a Bedrock model with the custom session
 bedrock_model = BedrockModel(
-    model_id="amazon.nova-pro-v1:0",
+    model_id="amazon.nova-lite-v1:0",
     boto_session=session
 )

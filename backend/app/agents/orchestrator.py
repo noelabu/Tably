@@ -2,46 +2,54 @@ import asyncio
 from strands import Agent
 
 from app.agents.config import bedrock_model
-from app.agents.ordering_agents import (
-    ordering_assistant_agent,
-    process_multilingual_order,
-    order_recommendation_combo
+from app.agents.swarm_tools import (
+    ordering_swarm,
+    recommendation_swarm,
+    multilingual_ordering_swarm
 )
 
 MAIN_SYSTEM_PROMPT = """
-You are an intelligent restaurant ordering assistant that helps customers place orders in any language.
+You are an intelligent restaurant ordering orchestrator that coordinates a swarm of specialized agents to help customers.
 
-**CRITICAL REQUIREMENT**: You MUST ONLY recommend, suggest, or mention items that are available in the restaurant's menu. NEVER suggest items that are not explicitly listed in the menu data. All your tools will enforce this restriction.
+**CRITICAL REQUIREMENT**: You MUST ONLY work with items available in the restaurant's menu. Your swarm agents will enforce this restriction.
 
-Your primary capabilities:
-1. Take and manage food orders (ONLY from available menu items)
-2. Provide menu recommendations (ONLY from available menu items)
-3. Handle orders in multiple languages (automatically detect and respond in the customer's language)
-4. Answer questions about menu items, ingredients, and dietary restrictions (ONLY for items in the menu)
+You have access to powerful swarm-based tools that leverage multiple specialized agents working together:
 
-**MENU RESTRICTIONS**:
-- ONLY use items from the restaurant's menu
-- Use exact item names and prices as they appear in the menu
-- If a customer asks for something not on the menu, politely inform them it's not available and suggest alternatives from the menu
+1. **ordering_swarm**: A collaborative team of agents for comprehensive order processing
+   - Order Coordinator: Routes requests and maintains conversation flow
+   - Menu Specialist: Deep menu knowledge and recommendations
+   - Language Specialist: Multilingual support
+   - Dietary Specialist: Handles allergies and restrictions
+   - Order Validator: Ensures complete, accurate orders
 
-IMPORTANT: When using any tool, always pass the business_id parameter if it's available in your context to ensure you're using the correct restaurant's menu.
+2. **recommendation_swarm**: Specialized team for personalized menu recommendations
+   - Analyzes preferences, dietary needs, and occasions
+   - Provides complete meal suggestions
+   - Considers all aspects of the dining experience
 
-ROUTING LOGIC:
-- For general ordering and English queries → Use the ordering_assistant_agent tool
-- For non-English orders or when language translation is needed → Use the process_multilingual_order tool
-- For combined recommendations with ordering → Use the order_recommendation_combo tool
+3. **multilingual_ordering_swarm**: Language-aware ordering team
+   - Automatic language detection
+   - Accurate translation of food terms
+   - Culturally appropriate communication
 
-Always be helpful, friendly, and respond in the customer's language when possible, but ONLY suggest items from the actual menu.
+**WHEN TO USE EACH SWARM**:
+- General orders, questions, or requests → Use ordering_swarm
+- Specific recommendation requests → Use recommendation_swarm  
+- Non-English communication → Use multilingual_ordering_swarm
+
+**IMPORTANT**: Always pass the business_id parameter to ensure correct menu context.
+
+The swarms will autonomously collaborate to provide the best possible service. Trust their collective intelligence and present their results clearly to customers.
 """
 
 orchestrator = Agent(
     system_prompt=MAIN_SYSTEM_PROMPT,
     model=bedrock_model,
     tools=[
-        # Core ordering agents only
-        ordering_assistant_agent,
-        process_multilingual_order,
-        order_recommendation_combo
+        # Swarm-based tools
+        ordering_swarm,
+        recommendation_swarm,
+        multilingual_ordering_swarm
     ],
     callback_handler=None
 )
@@ -52,15 +60,15 @@ def create_orchestrator_with_business_context(business_id: str = None):
     """
     context_addition = ""
     if business_id:
-        context_addition = f"\n\nBUSINESS CONTEXT: You are assisting customers for business ID: {business_id}. Always include business_id='{business_id}' when calling any tool."
+        context_addition = f"\n\nBUSINESS CONTEXT: You are assisting customers for business ID: {business_id}. Always include business_id='{business_id}' when calling any swarm tool."
     
     return Agent(
         system_prompt=MAIN_SYSTEM_PROMPT + context_addition,
         model=bedrock_model,
         tools=[
-            ordering_assistant_agent,
-            process_multilingual_order,
-            order_recommendation_combo
+            ordering_swarm,
+            recommendation_swarm,
+            multilingual_ordering_swarm
         ],
         callback_handler=None
     )
