@@ -32,7 +32,6 @@ import { OrderingChatService, ChatMessage } from '@/services/ordering-chat'
 import OrderingChatbotTab from './ordering-chatbot-tab';
 import OrderingMenuTab from './ordering-menu-tab';
 import OrderingVoiceTab from './ordering-voice-tab';
-import { useAuthStore } from '@/stores/auth.store';
 import { menuItemsService } from '@/services/menu-items';
 import type { MenuItem } from '@/types/menu-items.types';
 
