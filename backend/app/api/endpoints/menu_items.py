@@ -12,6 +12,7 @@ from app.models.menu_items import (
     MenuItemDeleteResponse
 )
 from app.db.menu_items import MenuItemsConnection
+from app.db.stock_level import StockLevelConnection
 
 # Configure logging
 logging.basicConfig(level=getattr(logging, settings.LOG_LEVEL))
@@ -23,12 +24,17 @@ def get_menu_items_db() -> MenuItemsConnection:
     """Dependency to get MenuItemsConnection instance"""
     return MenuItemsConnection()
 
+def get_stock_level_db() -> StockLevelConnection:
+    """Dependency to get StockLevelConnection instance"""
+    return StockLevelConnection()
+
 # CREATE - Add new menu item
 @router.post("/", response_model=MenuItemResponse, status_code=status.HTTP_201_CREATED)
 async def create_menu_item(
     menu_item: MenuItemCreate,
     current_user: UserResponse = Depends(get_current_user),
-    menu_items_db: MenuItemsConnection = Depends(get_menu_items_db)
+    menu_items_db: MenuItemsConnection = Depends(get_menu_items_db),
+    stock_level_db: StockLevelConnection = Depends(get_stock_level_db)
 ):
     """Create a new menu item for a business"""
     try:
@@ -48,10 +54,19 @@ async def create_menu_item(
             "description": menu_item.description,
             "price": float(menu_item.price),
             "image_url": menu_item.image_url,
-            "available": menu_item.available
+            "available": menu_item.available,
+            "category": menu_item.category
         }
         
         result = await menu_items_db.create_menu_item(menu_item_data)
+
+        stock_level_data = {
+          "menu_item_id": result["id"],
+          "quantity_available": menu_item.stock_level.quantity_available,
+          "total_quantity": menu_item.stock_level.total_quantity
+        }
+
+        await stock_level_db.create_stock_level(stock_level_data)
         
         if not result:
             raise HTTPException(
@@ -76,10 +91,15 @@ async def get_menu_items_by_business(
     business_id: str,
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
-    available_only: bool = Query(False, description="Show only available items"),
+    available_only: bool = Query(False, description="Only show available items"),
     current_user: UserResponse = Depends(get_current_user),
-    menu_items_db: MenuItemsConnection = Depends(get_menu_items_db)
+    menu_items_db = Depends(get_menu_items_db)
 ):
+    print(f"[DEBUG] business_id: {business_id}")
+    print(f"[DEBUG] page: {page}")
+    print(f"[DEBUG] page_size: {page_size}")
+    print(f"[DEBUG] available_only: {available_only}")
+    print(f"[DEBUG] current_user: {getattr(current_user, 'id', None)}")
     """Get all menu items for a specific business with pagination"""
     try:
         # Verify user owns the business
@@ -119,6 +139,41 @@ async def get_menu_items_by_business(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while retrieving menu items"
+        )
+
+# READ - Get menu items for order form
+@router.get("/order-form/{business_id}/", response_model=MenuItemsListResponse)
+async def get_menu_items_for_order_form(
+    business_id: str,
+    current_user: UserResponse = Depends(get_current_user),
+    menu_items_db: MenuItemsConnection = Depends(get_menu_items_db)
+):
+    """Get all menu items for a specific business with pagination"""
+    try:
+        # Get menu items with pagination
+        result = await menu_items_db.get_menu_items_by_business(
+            business_id=business_id,
+            page=1,
+            page_size=1000,
+            available_only=True
+        )
+        
+        items = [MenuItemResponse(**item) for item in result["items"]]
+        
+        return MenuItemsListResponse(
+            items=items,
+            total=result["total"],
+            page=result["page"],
+            page_size=result["page_size"]
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting menu items for order form: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while retrieving menu items for order form"
         )
 
 # READ - Get single menu item
@@ -186,6 +241,8 @@ async def update_menu_item(
             update_data["image_url"] = menu_item_update.image_url
         if menu_item_update.available is not None:
             update_data["available"] = menu_item_update.available
+        if menu_item_update.category is not None:
+            update_data["category"] = menu_item_update.category
         
         if not update_data:
             raise HTTPException(

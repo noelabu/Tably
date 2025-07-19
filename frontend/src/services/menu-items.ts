@@ -11,7 +11,7 @@ import {
 export const menuItemsService = {
   // Create a new menu item
   async createMenuItem(token: string, menuItem: MenuItemCreate): Promise<MenuItem> {
-    return apiService.withAuth(token).post<MenuItem>('/api/v1/menu-items/', menuItem);
+    return apiService.authPostWithStore<MenuItem>('/api/v1/menu-items/', menuItem);
   },
 
   // Get menu items for a specific business
@@ -27,7 +27,7 @@ export const menuItemsService = {
     if (params?.available_only) queryParams.append('available_only', params.available_only.toString());
     
     const queryString = queryParams.toString();
-    const url = `/api/v1/menu-items/business/${businessId}${queryString ? `?${queryString}` : ''}`;
+    const url = `/api/v1/menu-items/order-form/${businessId}${queryString ? `?${queryString}` : ''}`;
     
     return apiService.withAuth(token).get<MenuItemsListResponse>(url);
   },
