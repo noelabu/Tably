@@ -2,7 +2,7 @@ import React from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Send as SendIcon } from 'lucide-react';
+import { Send as SendIcon, Loader2, Bot, User } from 'lucide-react';
 
 interface OrderingChatbotTabProps {
   chatMessages: any[];
@@ -11,6 +11,8 @@ interface OrderingChatbotTabProps {
   onSendMessage: () => void;
   onSuggestedResponse: (response: string) => void;
   suggestedResponses: string[];
+  isLoading?: boolean;
+  disabled?: boolean;
 }
 
 const OrderingChatbotTab: React.FC<OrderingChatbotTabProps> = ({
@@ -20,6 +22,8 @@ const OrderingChatbotTab: React.FC<OrderingChatbotTabProps> = ({
   onSendMessage,
   onSuggestedResponse,
   suggestedResponses,
+  isLoading = false,
+  disabled = false,
 }) => (
   <div className="flex-1 flex flex-col space-y-4">
     {/* Chat Messages */}
@@ -37,10 +41,28 @@ const OrderingChatbotTab: React.FC<OrderingChatbotTabProps> = ({
                   : 'bg-card text-card-foreground border border-border'
               }`}
             >
-              {message.content}
+              <div className="flex items-start gap-2">
+                {message.type === 'bot' && <Bot className="w-4 h-4 mt-0.5 flex-shrink-0" />}
+                {message.type === 'user' && <User className="w-4 h-4 mt-0.5 flex-shrink-0" />}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm whitespace-pre-wrap break-words">{message.content}</p>
+                  <p className="text-xs opacity-60 mt-1">
+                    {message.timestamp.toLocaleTimeString()}
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
         ))}
+        {isLoading && (
+          <div className="flex justify-start">
+            <div className="max-w-xs lg:max-w-md bg-card text-card-foreground border border-border rounded-lg px-4 py-2 flex items-center gap-2">
+              <Bot className="w-4 h-4 flex-shrink-0" />
+              <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" />
+              <span className="text-sm">Typing...</span>
+            </div>
+          </div>
+        )}
       </div>
     </ScrollArea>
     {/* Suggested Responses */}
@@ -62,12 +84,21 @@ const OrderingChatbotTab: React.FC<OrderingChatbotTabProps> = ({
       <Input
         value={inputMessage}
         onChange={onInputChange}
-        placeholder="Type your message..."
-        onKeyPress={(e) => e.key === 'Enter' && onSendMessage()}
+        placeholder={isLoading ? "Waiting for response..." : "Type your message..."}
+        onKeyPress={(e) => e.key === 'Enter' && !isLoading && onSendMessage()}
+        disabled={isLoading || disabled}
         className="flex-1"
       />
-      <Button onClick={onSendMessage} className="bg-primary hover:bg-primary/90">
-        <SendIcon className="w-4 h-4" />
+      <Button 
+        onClick={onSendMessage} 
+        disabled={isLoading || !inputMessage.trim() || disabled}
+        className="bg-primary hover:bg-primary/90"
+      >
+        {isLoading ? (
+          <Loader2 className="w-4 h-4 animate-spin" />
+        ) : (
+          <SendIcon className="w-4 h-4" />
+        )}
       </Button>
     </div>
   </div>

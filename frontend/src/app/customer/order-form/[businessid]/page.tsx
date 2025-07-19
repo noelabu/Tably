@@ -17,6 +17,8 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { useCartStore } from '@/stores/cart.store';
+import { OrderingChatService, ChatMessage } from '@/services/ordering-chat';
+import { useAuth } from '@/hooks/use-auth';
 
 // Remove the local CartItem interface and use the imported MenuItem type with an added quantity field
 
@@ -38,7 +40,7 @@ export default function OrderFormPage() {
   const updateQuantity = useCartStore((state) => state.updateQuantity);
   const removeFromCart = useCartStore((state) => state.removeFromCart);
   const clearCart = useCartStore((state) => state.clearCart);
-  const [chatMessages, setChatMessages] = useState([
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
     {
       id: '1',
       type: 'bot',
@@ -47,6 +49,9 @@ export default function OrderFormPage() {
     },
   ]);
   const [inputMessage, setInputMessage] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [chatService, setChatService] = useState<OrderingChatService | null>(null);
+  const [useStreaming, setUseStreaming] = useState(true);
   const [isListening, setIsListening] = useState(false);
   const [transcribedText, setTranscribedText] = useState('');
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
@@ -59,6 +64,14 @@ export default function OrderFormPage() {
   const businessId = params.businessid as string;
   const token = useAuthStore((state) => state.tokens?.access_token || '');
   const router = useRouter();
+  const { user, isAuthenticated } = useAuth();
+
+  // Initialize chat service when user is available
+  useEffect(() => {
+    if (user && isAuthenticated && token) {
+      setChatService(new OrderingChatService(token));
+    }
+  }, [user, isAuthenticated, token]);
 
   useEffect(() => {
     if (businessId) {
@@ -90,29 +103,105 @@ export default function OrderFormPage() {
 
   // Remove all setCartItems and cartItems state logic, use the store methods instead
 
-  const sendMessage = () => {
-    if (!inputMessage.trim()) return;
+  const buildChatContext = (): string => {
+    const recentMessages = chatMessages.slice(-5).map(msg => 
+      `${msg.type}: ${msg.content}`
+    ).join('\n');
+    
+    return `Recent conversation:\n${recentMessages}\n\nBusiness ID: ${businessId}`;
+  };
 
-    const newMessage = {
+  const sendMessage = async () => {
+    if (!inputMessage.trim() || isLoading || !chatService) return;
+    
+    const newMessage: ChatMessage = {
       id: Date.now().toString(),
       type: 'user',
       content: inputMessage,
-      timestamp: new Date(),
+      timestamp: new Date()
     };
-
-    setChatMessages([...chatMessages, newMessage]);
+    
+    setChatMessages(prev => [...prev, newMessage]);
+    const currentMessage = inputMessage;
     setInputMessage('');
-
-    // Simulate bot response
-    setTimeout(() => {
-      const botResponse = {
+    setIsLoading(true);
+    
+    try {
+      const context = buildChatContext();
+      
+      if (useStreaming) {
+        // Handle streaming response
+        const botMessage: ChatMessage = {
+          id: (Date.now() + 1).toString(),
+          type: 'bot',
+          content: '',
+          timestamp: new Date()
+        };
+        setChatMessages(prev => [...prev, botMessage]);
+        
+        try {
+          for await (const chunk of chatService.streamMessage(currentMessage, context, businessId)) {
+            if (chunk.type === 'message') {
+              setChatMessages(prev => 
+                prev.map(msg => 
+                  msg.id === botMessage.id 
+                    ? { ...msg, content: msg.content + chunk.content }
+                    : msg
+                )
+              );
+            } else if (chunk.type === 'error') {
+              setChatMessages(prev => 
+                prev.map(msg => 
+                  msg.id === botMessage.id 
+                    ? { ...msg, content: chunk.error || "Sorry, there was an error processing your request." }
+                    : msg
+                )
+              );
+              break;
+            } else if (chunk.type === 'done') {
+              break;
+            }
+          }
+        } catch (error) {
+          setChatMessages(prev => 
+            prev.map(msg => 
+              msg.id === botMessage.id 
+                ? { ...msg, content: "Sorry, there was an error with the streaming connection." }
+                : msg
+            )
+          );
+        }
+      } else {
+        // Handle non-streaming response
+        const response = await chatService.sendMessage(currentMessage, context, businessId);
+        const botResponse: ChatMessage = {
+          id: (Date.now() + 1).toString(),
+          type: 'bot',
+          content: response.response,
+          timestamp: new Date()
+        };
+        setChatMessages(prev => [...prev, botResponse]);
+      }
+    } catch (error) {
+      console.error('Error sending message:', error);
+      
+      let errorMessage = "Sorry, there was an error processing your request.";
+      if (error instanceof Error && error.message.includes('401')) {
+        errorMessage = "Authentication error. Please log in again.";
+      } else if (error instanceof Error && error.message.includes('403')) {
+        errorMessage = "Access denied. Please check your permissions.";
+      }
+      
+      const errorResponse: ChatMessage = {
         id: (Date.now() + 1).toString(),
         type: 'bot',
-        content: "I'd be happy to help! Let me check our menu for you.",
-        timestamp: new Date(),
+        content: errorMessage,
+        timestamp: new Date()
       };
-      setChatMessages(prev => [...prev, botResponse]);
-    }, 1000);
+      setChatMessages(prev => [...prev, errorResponse]);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleSuggestedResponse = (response: string) => {
@@ -186,6 +275,8 @@ export default function OrderFormPage() {
                     inputMessage={inputMessage}
                     onInputChange={(e) => setInputMessage(e.target.value)}
                     onSendMessage={sendMessage}
+                    isLoading={isLoading}
+                    disabled={!chatService}
                     onSuggestedResponse={handleSuggestedResponse}
                     suggestedResponses={suggestedResponses}
                   />
