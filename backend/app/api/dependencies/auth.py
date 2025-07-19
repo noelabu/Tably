@@ -36,7 +36,7 @@ async def get_current_supabase_client(token: str = Depends(oauth2_scheme)):
 
 
 async def get_current_user(
-    token: str = Depends(oauth2_scheme), supabase: Client = Depends(get_supabase)
+    token: str = Depends(oauth2_scheme)
 ) -> UserResponse:
     """
     Validate JWT token and return current user
@@ -44,15 +44,22 @@ async def get_current_user(
     This dependency can be used to protect routes that require authentication
     """
     try:
-        user_response = supabase.auth.get_user(token)
+        # Create a Supabase client with the user's token for auth operations
+        user_supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_ANON_KEY)
+        
+        # Set the authorization header directly
+        user_supabase.auth.set_session(token, token)
+        
+        user_response = user_supabase.auth.get_user(token)
         if not user_response or not user_response.user:
             logger.error("Invalid or expired token")
             raise HTTPException(
                 status_code=401, detail="Unauthorized Access: Invalid token"
             )
         
-        # Get user data from public.users table
-        user_data_response = supabase.table("users").select("*").eq("id", user_response.user.id).execute()
+        # Use service key client for database operations
+        service_supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
+        user_data_response = service_supabase.table("users").select("*").eq("id", user_response.user.id).execute()
         
         if not user_data_response.data:
             logger.error("User not found in public.users table")
@@ -80,7 +87,7 @@ async def get_current_user(
 
 
 async def get_current_user_optional(
-    token: Optional[str] = Depends(oauth2_scheme), supabase: Client = Depends(get_supabase)
+    token: Optional[str] = Depends(oauth2_scheme)
 ) -> Optional[UserResponse]:
     """
     Optional authentication dependency
@@ -90,6 +97,6 @@ async def get_current_user_optional(
         return None
     
     try:
-        return await get_current_user(token, supabase)
+        return await get_current_user(token)
     except HTTPException:
         return None

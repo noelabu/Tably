@@ -115,7 +115,6 @@ async def create_order(
             )
         
         # Convert any datetime fields in complete_order to ISO strings for serialization
-        # pickup_time conversion removed
         if "created_at" in complete_order and isinstance(complete_order["created_at"], (datetime,)):
             complete_order["created_at"] = complete_order["created_at"].isoformat()
         # Also convert in items
@@ -124,7 +123,6 @@ async def create_order(
                 if "created_at" in item and isinstance(item["created_at"], (datetime,)):
                     item["created_at"] = item["created_at"].isoformat()
                     
-        
         return OrderResponse(**complete_order)
         
     except HTTPException:
@@ -238,7 +236,6 @@ async def get_order(
 ):
     """Get a specific order by ID"""
     try:
-        """Get an order by ID, including order items and their menu item names."""
         data = await orders_db.get_order_with_items_by_id(order_id)
         if not data:
             raise HTTPException(status_code=404, detail="Order not found")
@@ -268,10 +265,10 @@ async def get_order(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error getting order: {str(e)}")
+        logger.error(f"Error retrieving order: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An error occurred while retrieving the order"
+            detail="Failed to retrieve order"
         )
 
 # New endpoint: Get order with items and menu item names
@@ -282,31 +279,40 @@ async def get_order_with_items(
     orders_db: OrdersConnection = Depends(get_orders_db)
 ):
     """Get an order by ID, including order items and their menu item names."""
-    data = await orders_db.get_order_with_items_by_id(order_id)
-    if not data:
-        raise HTTPException(status_code=404, detail="Order not found")
-    # Map order_items to requested format
-    order_items = []
-    for item in data.get("order_items", []):
-        menu_item = item.get("menu_items")
-        name = menu_item["name"] if isinstance(menu_item, dict) and "name" in menu_item else ""
-        order_items.append(OrderItemWithMenuName(
-            id=item["id"],
-            order_id=item["order_id"],
-            menu_item_id=item["menu_item_id"],
-            name=name,
-            quantity=item["quantity"],
-            price_at_order=item["price_at_order"],
-        ))
-    return OrderWithItemsResponse(
-        id=data["id"],
-        customer_id=data["customer_id"],
-        business_id=data["business_id"],
-        total_amount=data["total_amount"],
-        status=data["status"],
-        created_at=data["created_at"],
-        order_items=order_items
-    )
+    try:
+        data = await orders_db.get_order_with_items_by_id(order_id)
+        if not data:
+            raise HTTPException(status_code=404, detail="Order not found")
+        # Map order_items to requested format
+        order_items = []
+        for item in data.get("order_items", []):
+            menu_item = item.get("menu_items")
+            name = menu_item["name"] if isinstance(menu_item, dict) and "name" in menu_item else ""
+            order_items.append(OrderItemWithMenuName(
+                id=item["id"],
+                order_id=item["order_id"],
+                menu_item_id=item["menu_item_id"],
+                name=name,
+                quantity=item["quantity"],
+                price_at_order=item["price_at_order"],
+            ))
+        return OrderWithItemsResponse(
+            id=data["id"],
+            customer_id=data["customer_id"],
+            business_id=data["business_id"],
+            total_amount=data["total_amount"],
+            status=data["status"],
+            created_at=data["created_at"],
+            order_items=order_items
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving order with items: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve order with items"
+        )
 
 # UPDATE - Update order (business owner can update status, customer can update pickup time)
 @router.patch("/{order_id}", response_model=OrderResponse)
@@ -398,4 +404,4 @@ async def delete_order(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while deleting the order"
-        ) 
+        )
