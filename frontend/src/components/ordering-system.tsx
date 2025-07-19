@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
@@ -25,70 +25,33 @@ import {
   User,
   LogOut
 } from 'lucide-react'
+import OrderingChatbotTab from './ordering-chatbot-tab';
+import OrderingMenuTab from './ordering-menu-tab';
+import OrderingVoiceTab from './ordering-voice-tab';
+import { useAuthStore } from '@/stores/auth.store';
+import { menuItemsService } from '@/services/menu-items';
+import type { MenuItem } from '@/types/menu-items.types';
 
 interface OrderingSystemProps {
   onLogout?: () => void
 }
 
-interface MenuItem {
-  id: string
-  name: string
-  description: string
-  price: number
-  category: string
-  image?: string
-  rating?: number
-  prepTime?: number
-  popular?: boolean
-}
+// Remove the local MenuItem interface definition
+// interface MenuItem {
+//   id: string
+//   name: string
+//   description: string
+//   price: number
+//   category: string
+//   image?: string
+//   rating?: number
+//   prepTime?: number
+//   popular?: boolean
+// }
 
-interface CartItem extends MenuItem {
-  quantity: number
-  customizations?: string[]
-}
+// Remove the local CartItem interface and use the imported MenuItem type with an added quantity field
 
-const menuItems: MenuItem[] = [
-  {
-    id: '1',
-    name: 'Classic Burger',
-    description: 'Beef patty, lettuce, tomato, onion, pickles, special sauce',
-    price: 12.99,
-    category: 'Burgers',
-    rating: 4.5,
-    prepTime: 15,
-    popular: true
-  },
-  {
-    id: '2',
-    name: 'Margherita Pizza',
-    description: 'Fresh mozzarella, tomato sauce, basil, olive oil',
-    price: 18.99,
-    category: 'Pizza',
-    rating: 4.7,
-    prepTime: 20
-  },
-  {
-    id: '3',
-    name: 'Caesar Salad',
-    description: 'Romaine lettuce, croutons, parmesan, caesar dressing',
-    price: 9.99,
-    category: 'Salads',
-    rating: 4.3,
-    prepTime: 8
-  },
-  {
-    id: '4',
-    name: 'Chicken Wings',
-    description: 'Buffalo sauce, celery sticks, blue cheese dip',
-    price: 14.99,
-    category: 'Appetizers',
-    rating: 4.6,
-    prepTime: 12,
-    popular: true
-  }
-]
-
-const categories = ['All', 'Burgers', 'Pizza', 'Salads', 'Appetizers', 'Drinks', 'Desserts']
+type CartItem = MenuItem & { quantity: number; customizations?: string[] };
 
 const suggestedResponses = [
   "I'd like to see the burger menu",
@@ -112,6 +75,40 @@ export default function OrderingSystem({ onLogout }: OrderingSystemProps) {
   const [inputMessage, setInputMessage] = useState('')
   const [isListening, setIsListening] = useState(false)
   const [transcribedText, setTranscribedText] = useState('')
+
+  // New state for menu items and categories
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [categories, setCategories] = useState<string[]>(['All']);
+  const [loadingMenu, setLoadingMenu] = useState(false);
+  const [menuError, setMenuError] = useState<string | null>(null);
+
+  const businessId = '5f5234da-631e-4196-b9d0-fab5901d483d';
+  const token = useAuthStore((state) => state.tokens?.access_token || '');
+
+  useEffect(() => {
+    async function fetchMenu() {
+      setLoadingMenu(true);
+      setMenuError(null);
+      try {
+        const response = await menuItemsService.getMenuItemsByBusiness(token, businessId);
+        setMenuItems(response.items);
+        // Extract unique categories from menu items
+        const uniqueCategories = Array.from(
+          new Set(
+            response.items
+              .map((item) => item.category)
+              .filter((cat): cat is string => !!cat && cat.trim() !== '')
+          )
+        );
+        setCategories(['All', ...uniqueCategories]);
+      } catch (err) {
+        setMenuError('Failed to load menu items.');
+      } finally {
+        setLoadingMenu(false);
+      }
+    }
+    fetchMenu();
+  }, [token, businessId]);
 
   const addToCart = (item: MenuItem) => {
     const existingItem = cartItems.find(cartItem => cartItem.id === item.id)
@@ -187,8 +184,8 @@ export default function OrderingSystem({ onLogout }: OrderingSystemProps) {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="bg-card border-b px-6 py-4 sticky top-0 z-10">
+      {/* Section Header (not sticky) */}
+      <section className="bg-card border-b px-6 py-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Bella Vista Italiana</h1>
@@ -214,7 +211,7 @@ export default function OrderingSystem({ onLogout }: OrderingSystemProps) {
             )}
           </div>
         </div>
-      </header>
+      </section>
 
       <div className="flex h-screen">
         {/* Main Content */}
@@ -246,195 +243,34 @@ export default function OrderingSystem({ onLogout }: OrderingSystemProps) {
             <Tabs value={activeMode} className="h-full">
               {/* Chatbot Mode */}
               <TabsContent value="chatbot" className="h-full flex flex-col">
-                <div className="flex-1 flex flex-col space-y-4">
-                  {/* Chat Messages */}
-                  <ScrollArea className="flex-1 bg-muted rounded-lg p-4">
-                    <div className="space-y-4">
-                      {chatMessages.map((message) => (
-                        <div
-                          key={message.id}
-                          className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
-                        >
-                          <div
-                            className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
-                              message.type === 'user'
-                                ? 'bg-primary text-primary-foreground'
-                                : 'bg-card text-card-foreground border border-border'
-                            }`}
-                          >
-                            {message.content}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </ScrollArea>
-
-                  {/* Suggested Responses */}
-                  <div className="flex flex-wrap gap-2">
-                    {suggestedResponses.map((response, index) => (
-                      <Button
-                        key={index}
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleSuggestedResponse(response)}
-                        className="text-sm"
-                      >
-                        {response}
-                      </Button>
-                    ))}
-                  </div>
-
-                  {/* Message Input */}
-                  <div className="flex gap-2">
-                    <Input
-                      value={inputMessage}
-                      onChange={(e) => setInputMessage(e.target.value)}
-                      placeholder="Type your message..."
-                      onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
-                      className="flex-1"
-                    />
-                    <Button onClick={sendMessage} className="bg-primary hover:bg-primary/90">
-                      <SendIcon className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </div>
+                <OrderingChatbotTab
+                  chatMessages={chatMessages}
+                  inputMessage={inputMessage}
+                  onInputChange={(e) => setInputMessage(e.target.value)}
+                  onSendMessage={sendMessage}
+                  onSuggestedResponse={handleSuggestedResponse}
+                  suggestedResponses={suggestedResponses}
+                />
               </TabsContent>
 
               {/* Menu Mode */}
               <TabsContent value="menu" className="h-full">
-                <div className="h-full flex flex-col space-y-4">
-                  {/* Category Filter */}
-                  <div className="flex flex-wrap gap-2">
-                    {categories.map((category) => (
-                      <Button
-                        key={category}
-                        variant={selectedCategory === category ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => setSelectedCategory(category)}
-                        className={selectedCategory === category ? "bg-primary hover:bg-primary/90" : ""}
-                      >
-                        {category}
-                      </Button>
-                    ))}
-                  </div>
-
-                  {/* Menu Items */}
-                  <ScrollArea className="flex-1">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {filteredItems.map((item) => (
-                        <Card key={item.id} className="bg-card">
-                          <CardHeader className="pb-3">
-                            <div className="flex items-start justify-between">
-                              <div>
-                                <CardTitle className="text-lg flex items-center gap-2">
-                                  {item.name}
-                                  {item.popular && (
-                                    <Badge className="bg-primary text-primary-foreground">
-                                      Popular
-                                    </Badge>
-                                  )}
-                                </CardTitle>
-                                <p className="text-muted-foreground text-sm mt-1">
-                                  {item.description}
-                                </p>
-                              </div>
-                              <div className="text-right">
-                                <div className="text-xl font-semibold text-foreground">
-                                  ${item.price}
-                                </div>
-                              </div>
-                            </div>
-                          </CardHeader>
-                          <CardContent className="pt-0">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                                {item.rating && (
-                                  <div className="flex items-center gap-1">
-                                    <Star className="w-4 h-4 fill-current text-yellow-400" />
-                                    {item.rating}
-                                  </div>
-                                )}
-                                {item.prepTime && (
-                                  <div className="flex items-center gap-1">
-                                    <Clock className="w-4 h-4" />
-                                    {item.prepTime}m
-                                  </div>
-                                )}
-                                <div className="flex items-center gap-1">
-                                  <ChefHat className="w-4 h-4" />
-                                  {item.category}
-                                </div>
-                              </div>
-                              <Button 
-                                onClick={() => addToCart(item)}
-                                className="bg-primary hover:bg-primary/90"
-                              >
-                                <Plus className="w-4 h-4 mr-1" />
-                                Add
-                              </Button>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      ))}
-                    </div>
-                  </ScrollArea>
-                </div>
+                <OrderingMenuTab
+                  categories={categories}
+                  selectedCategory={selectedCategory}
+                  setSelectedCategory={setSelectedCategory}
+                  filteredItems={filteredItems}
+                  addToCart={addToCart}
+                />
               </TabsContent>
 
               {/* Voice Mode */}
               <TabsContent value="voice" className="h-full">
-                <div className="h-full flex flex-col items-center justify-center space-y-8">
-                  <div className="text-center space-y-4">
-                    <h2 className="text-2xl font-semibold text-foreground">Voice Ordering</h2>
-                    <p className="text-muted-foreground">
-                      Tap the microphone and tell us what you'd like to order
-                    </p>
-                  </div>
-
-                  {/* Microphone Button */}
-                  <Button
-                    onClick={toggleVoiceListening}
-                    className={`w-32 h-32 rounded-full ${
-                      isListening 
-                        ? 'bg-red-500 hover:bg-red-600 animate-pulse' 
-                        : 'bg-primary hover:bg-primary/90'
-                    }`}
-                  >
-                    <Mic className="w-12 h-12" />
-                  </Button>
-
-                  {/* Status and Transcription */}
-                  <div className="text-center space-y-4 max-w-md">
-                    <div className="text-lg font-medium text-foreground">
-                      {isListening ? 'Listening...' : 'Tap to speak'}
-                    </div>
-                    
-                    {transcribedText && (
-                      <Card className="bg-muted">
-                        <CardContent className="p-4">
-                          <div className="text-sm text-muted-foreground mb-2">Transcribed:</div>
-                          <div className="text-foreground">{transcribedText}</div>
-                        </CardContent>
-                      </Card>
-                    )}
-
-                    {/* Waveform Visualization */}
-                    {isListening && (
-                      <div className="flex items-center justify-center space-x-1 h-8">
-                        {[...Array(5)].map((_, i) => (
-                          <div
-                            key={i}
-                            className="w-1 bg-primary rounded-full animate-pulse"
-                            style={{
-                              height: `${20 + Math.random() * 20}px`,
-                              animationDelay: `${i * 0.1}s`
-                            }}
-                          />
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
+                <OrderingVoiceTab
+                  isListening={isListening}
+                  transcribedText={transcribedText}
+                  toggleVoiceListening={toggleVoiceListening}
+                />
               </TabsContent>
             </Tabs>
           </div>

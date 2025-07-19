@@ -2,6 +2,7 @@ from pydantic import BaseModel, Field
 from typing import Optional, List
 from decimal import Decimal
 from datetime import datetime
+from app.models.stock_levels import StockLevelCreate
 
 class MenuItemBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=200, description="Name of the menu item")
@@ -9,9 +10,11 @@ class MenuItemBase(BaseModel):
     price: Decimal = Field(..., gt=0, le=9999.99, description="Price of the menu item")
     image_url: Optional[str] = Field(None, description="URL to the menu item image")
     available: bool = Field(True, description="Whether the menu item is available")
+    category: Optional[str] = Field(None, description="Category of the menu item")
 
 class MenuItemCreate(MenuItemBase):
     business_id: str = Field(..., description="ID of the business this menu item belongs to")
+    stock_level: StockLevelCreate = Field(..., description="Stock level of the menu item")
 
 class MenuItemUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=200, description="Name of the menu item")
@@ -19,6 +22,7 @@ class MenuItemUpdate(BaseModel):
     price: Optional[Decimal] = Field(None, gt=0, le=9999.99, description="Price of the menu item")
     image_url: Optional[str] = Field(None, description="URL to the menu item image")
     available: Optional[bool] = Field(None, description="Whether the menu item is available")
+    category: Optional[str] = Field(None, description="Category of the menu item")
 
 class MenuItemResponse(MenuItemBase):
     id: str
