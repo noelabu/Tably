@@ -17,6 +17,7 @@ from app.agents.ordering_agents import (
     order_recommendation_combo
 )
 from app.agents.orchestrator import orchestrator, create_orchestrator_with_business_context
+from app.agents.swarm_tools import ordering_swarm
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -61,6 +62,7 @@ class StreamingOrderRequest(BaseModel):
     message: str = Field(..., description="Customer message")
     context: Optional[str] = Field(None, description="Optional context")
     business_id: Optional[str] = Field(None, description="Business ID for menu context")
+    session_id: Optional[str] = Field(None, description="Session ID for conversation memory")
 
 @router.post("/order-assistant", response_model=OrderingResponse)
 async def order_assistant_endpoint(
@@ -241,14 +243,12 @@ async def chat_with_ordering_system(
     try:
         logger.info(f"Ordering chat request from user {current_user.id}")
         
-        # Create orchestrator with business context if provided
-        if hasattr(request, 'business_id') and request.business_id:
-            agent = create_orchestrator_with_business_context(request.business_id)
-        else:
-            agent = orchestrator
-        
-        # Use the orchestrator for intelligent routing
-        response = agent(request.message)
+        # Use the ordering swarm with conversation memory
+        response = ordering_swarm(
+            customer_request=request.message,
+            business_id=request.business_id,
+            session_id=request.session_id or f"user_{current_user.id}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+        )
         
         return {
             "response": str(response),

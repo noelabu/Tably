@@ -216,6 +216,7 @@ def process_order_with_swarm(
     customer_request: Union[str, List[ContentBlock]], 
     business_id: Optional[str] = None,
     menu_context: Optional[str] = None,
+    conversation_context: Optional[str] = None,
     force_swarm: bool = False
 ) -> str:
     """
@@ -233,7 +234,7 @@ def process_order_with_swarm(
     # For Nova Lite model, use fallback agent by default for better stability
     if not force_swarm:
         logger.info(f"Using optimized single agent for Nova Lite model (business: {business_id})")
-        return _fallback_to_single_agent(customer_request, business_id, menu_context)
+        return _fallback_to_single_agent(customer_request, business_id, menu_context, conversation_context)
     
     try:
         logger.info(f"Processing order with swarm for business: {business_id} (forced)")
@@ -259,18 +260,19 @@ def process_order_with_swarm(
         else:
             logger.warning(f"Swarm execution failed: {result.status}. Falling back to single agent.")
             # Fallback to individual agent processing
-            return _fallback_to_single_agent(customer_request, business_id, menu_context)
+            return _fallback_to_single_agent(customer_request, business_id, menu_context, conversation_context)
             
     except Exception as e:
         logger.error(f"Error in swarm order processing: {e}")
         logger.info("Falling back to single agent processing")
-        return _fallback_to_single_agent(customer_request, business_id, menu_context)
+        return _fallback_to_single_agent(customer_request, business_id, menu_context, conversation_context)
 
 # Async version for async contexts
 async def process_order_with_swarm_async(
     customer_request: Union[str, List[ContentBlock]], 
     business_id: Optional[str] = None,
-    menu_context: Optional[str] = None
+    menu_context: Optional[str] = None,
+    conversation_context: Optional[str] = None
 ) -> str:
     """
     Async version of process_order_with_swarm.
@@ -298,17 +300,18 @@ async def process_order_with_swarm_async(
         else:
             logger.warning(f"Swarm execution failed: {result.status}. Falling back to single agent.")
             # Fallback to individual agent processing
-            return _fallback_to_single_agent(customer_request, business_id, menu_context)
+            return _fallback_to_single_agent(customer_request, business_id, menu_context, conversation_context)
             
     except Exception as e:
         logger.error(f"Error in async swarm order processing: {e}")
         logger.info("Falling back to single agent processing")
-        return _fallback_to_single_agent(customer_request, business_id, menu_context)
+        return _fallback_to_single_agent(customer_request, business_id, menu_context, conversation_context)
 
 def _fallback_to_single_agent(
     customer_request: Union[str, List[ContentBlock]], 
     business_id: Optional[str] = None,
-    menu_context: Optional[str] = None
+    menu_context: Optional[str] = None,
+    conversation_context: Optional[str] = None
 ) -> str:
     """
     Fallback to a single comprehensive agent when swarm fails.
@@ -322,6 +325,8 @@ def _fallback_to_single_agent(
             context += f"Business ID: {business_id}\n"
         if menu_context:
             context += f"\nMENU DATA:\n{menu_context}"
+        if conversation_context:
+            context += f"\n\n{conversation_context}"
         
         # Create a comprehensive single agent that combines all capabilities
         fallback_prompt = f"""

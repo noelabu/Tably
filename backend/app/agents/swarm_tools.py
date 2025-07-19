@@ -4,6 +4,7 @@ import asyncio
 import logging
 from app.agents.swarm_orchestrator import process_order_with_swarm, process_order_with_swarm_async
 from app.services.menu_context_service import menu_context_service
+from app.services.conversation_memory import conversation_memory
 
 logger = logging.getLogger(__name__)
 
@@ -12,7 +13,8 @@ def ordering_swarm(
     customer_request: str,
     business_id: Optional[str] = None,
     include_menu_context: bool = True,
-    use_swarm_mode: bool = False
+    use_swarm_mode: bool = False,
+    session_id: Optional[str] = None
 ) -> str:
     """
     Process customer orders using intelligent agent system (optimized for Nova Lite).
@@ -30,12 +32,14 @@ def ordering_swarm(
         business_id: Optional business ID to load specific menu
         include_menu_context: Whether to load menu data (default: True)
         use_swarm_mode: Force swarm mode (default: False for stability)
+        session_id: Optional session ID for conversation memory
         
     Returns:
         Processed order response from the intelligent agent system
     """
     try:
         menu_context = None
+        conversation_context = None
         
         # Load menu context if requested and business_id provided
         if include_menu_context and business_id:
@@ -52,13 +56,33 @@ def ordering_swarm(
                 logger.error(f"Error loading menu context: {e}")
                 menu_context = None
         
+        # Load conversation context if session_id provided
+        if session_id:
+            try:
+                # Add user message to conversation
+                conversation_memory.add_user_message(session_id, customer_request, business_id)
+                # Get conversation context
+                conversation_context = conversation_memory.get_conversation_context(session_id)
+                logger.info(f"Loaded conversation context for session {session_id}")
+            except Exception as e:
+                logger.error(f"Error loading conversation context: {e}")
+                conversation_context = None
+        
         # Process with optimized agent system  
         result = process_order_with_swarm(
             customer_request=customer_request,
             business_id=business_id,
             menu_context=menu_context,
+            conversation_context=conversation_context,
             force_swarm=use_swarm_mode
         )
+        
+        # Add assistant response to conversation
+        if session_id:
+            try:
+                conversation_memory.add_assistant_message(session_id, result)
+            except Exception as e:
+                logger.error(f"Error saving assistant response: {e}")
         
         return result
         
