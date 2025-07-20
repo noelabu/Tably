@@ -140,13 +140,32 @@ async def time_it_async(label, methodToRun):
 class RestaurantToolProcessor:
     """Processes restaurant-specific tools for ordering."""
     
-    def __init__(self, business_id: str):
+    def __init__(self, business_id: str, cart_event_callback=None):
         self.business_id = business_id
         self.menu_db = MenuItemsConnection()
         self.orders_db = OrdersConnection()
         self.current_order: List[Dict] = []
         self.customer_info: Dict[str, Any] = {}
         self.tasks = {}
+        self.cart_event_callback = cart_event_callback
+    
+    async def emit_cart_event(self, action: str, item: Dict = None, cart_items: List[Dict] = None):
+        """Emit cart update event to WebSocket if callback is available"""
+        if self.cart_event_callback:
+            total = sum(item["unit_price"] * item["quantity"] for item in self.current_order)
+            cart_event = {
+                "type": "cart_updated",
+                "action": action,  # add, remove, update, clear
+                "item": item,
+                "cart_items": cart_items or self.current_order,
+                "cart_total": total,
+                "item_count": len(self.current_order)
+            }
+            try:
+                await self.cart_event_callback(cart_event)
+                debug_print(f"Emitted cart event: {action}")
+            except Exception as e:
+                debug_print(f"Error emitting cart event: {e}")
     
     async def process_tool_async(self, tool_name, tool_content):
         """Process a tool call asynchronously and return the result"""
@@ -337,6 +356,9 @@ class RestaurantToolProcessor:
                 self.current_order.append(order_item)
                 action = "added"
             
+            # Emit cart event
+            await self.emit_cart_event("add", order_item)
+            
             total_price = order_item["unit_price"] * quantity
             
             return {
@@ -365,13 +387,19 @@ class RestaurantToolProcessor:
                 if order_item["name"].lower() == item_name.lower():
                     if quantity is None or quantity >= order_item["quantity"]:
                         removed_quantity = order_item["quantity"]
+                        removed_item = order_item.copy()
                         self.current_order.pop(i)
+                        # Emit cart event for removal
+                        await self.emit_cart_event("remove", removed_item)
                         return {
                             "success": True,
                             "message": f"Removed all {removed_quantity} {order_item['name']} from order"
                         }
                     else:
+                        original_quantity = order_item["quantity"]
                         order_item["quantity"] -= quantity
+                        # Emit cart event for quantity update
+                        await self.emit_cart_event("update", order_item)
                         return {
                             "success": True,
                             "message": f"Removed {quantity} {order_item['name']}. {order_item['quantity']} remaining"
@@ -472,6 +500,9 @@ class RestaurantToolProcessor:
                 # Clear current order
                 self.current_order = []
                 self.customer_info = {}
+                
+                # Emit cart clear event
+                await self.emit_cart_event("clear", cart_items=[])
                 
                 return {
                     "success": True,
@@ -636,8 +667,8 @@ class RestaurantStreamManager:
         self.toolUseId = ""
         self.toolName = ""
 
-        # Add restaurant tool processor
-        self.tool_processor = RestaurantToolProcessor(business_id)
+        # Add restaurant tool processor with cart event callback
+        self.tool_processor = RestaurantToolProcessor(business_id, self.emit_cart_event)
         
         # Add tracking for in-progress tool calls
         self.pending_tool_tasks = {}
@@ -645,6 +676,14 @@ class RestaurantStreamManager:
         # Conversation management
         self.last_interaction_time = None
         self.idle_timeout = 30  # 30 seconds of silence before prompting
+
+    async def emit_cart_event(self, cart_data):
+        """Emit cart event to WebSocket output queue"""
+        try:
+            await self.output_queue.put(cart_data)
+            debug_print(f"Cart event emitted: {cart_data.get('action', 'unknown')}")
+        except Exception as e:
+            debug_print(f"Error emitting cart event: {e}")
 
     def _initialize_client(self):
         """Initialize the Bedrock client."""
