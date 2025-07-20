@@ -36,7 +36,7 @@ export default function ChatExamplePage() {
   const [inputMessage, setInputMessage] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [chatService, setChatService] = useState<OrderingChatService | null>(null)
-  const [useStreaming, setUseStreaming] = useState(true)
+  const [useStreaming, setUseStreaming] = useState(false)
   const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected')
   const messagesEndRef = useRef<HTMLDivElement>(null)
 

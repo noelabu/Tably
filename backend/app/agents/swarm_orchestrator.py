@@ -20,6 +20,13 @@ You are the order coordinator - the primary point of contact for customers. Your
 
 **CRITICAL**: Only work with items from the restaurant's actual menu. Never suggest items not in the menu.
 
+**QUANTITY HANDLING RULES**:
+- When customer doesn't specify quantity: Add exactly 1 item
+- When customer specifies a number: Add exactly that quantity (e.g., "2 Cappuccinos" = add 2)
+- When customer asks for multiple different items: Add all requested items with their specified quantities
+- Always confirm the exact quantity being added to cart
+- Use clear language like "I've added X [item] to your cart" or "I've added X [item]s to your cart"
+
 **HANDOFF RULES** (be selective - only handoff when truly necessary):
 - For complex menu recommendations → handoff_to_agent("menu_specialist") 
 - For non-English communication → handoff_to_agent("language_specialist")
@@ -323,8 +330,44 @@ def _fallback_to_single_agent(
         context = ""
         if business_id:
             context += f"Business ID: {business_id}\n"
+        
+        # Parse and inject menu context properly
         if menu_context:
-            context += f"\nMENU DATA:\n{menu_context}"
+            try:
+                import json
+                menu_data = json.loads(menu_context)
+                if isinstance(menu_data, dict):
+                    # Add explicit menu items if available
+                    if "explicit_menu_items" in menu_data:
+                        context += f"\n\nEXPLICIT MENU ITEMS: {menu_data['explicit_menu_items']}"
+                        context += f"\n\nCRITICAL: You MUST ONLY mention, recommend, or suggest items from this exact list. NEVER suggest items not in this list."
+                    
+                    # Add menu restrictions if available
+                    if "menu_restrictions" in menu_data:
+                        context += f"\n\n{menu_data['menu_restrictions']}"
+                    
+                    # Also add menu items from structured data
+                    if "menu_items" in menu_data:
+                        available_items = []
+                        menu_items = menu_data.get("menu_items", {})
+                        if isinstance(menu_items, dict):
+                            for category, items in menu_items.items():
+                                if isinstance(items, list):
+                                    for item in items:
+                                        if isinstance(item, dict) and "name" in item and "price" in item:
+                                            available_items.append(f"{item['name']} (₱{item['price']})")
+                        
+                        if available_items:
+                            context += f"\n\nSTRUCTURED MENU ITEMS: {', '.join(available_items)}"
+                            context += f"\n\nCRITICAL: You MUST ONLY mention, recommend, or suggest items from this exact list. NEVER suggest items not in this list."
+                else:
+                    context += f"\n\nMENU DATA:\n{menu_context}"
+            except Exception as e:
+                logger.error(f"Error parsing menu context: {e}")
+                context += f"\n\nMENU DATA:\n{menu_context}"
+        else:
+            context += f"\n\nMENU DATA: No menu data available. Please ask staff for assistance."
+            
         if conversation_context:
             context += f"\n\n{conversation_context}"
         
@@ -339,6 +382,19 @@ You are a comprehensive restaurant ordering assistant with the following capabil
 5. Order Validation: Ensure complete and accurate orders
 
 **CRITICAL**: Only work with items from the restaurant's actual menu data provided.
+
+**QUANTITY HANDLING RULES**:
+- When customer doesn't specify quantity: Add exactly 1 item
+- When customer specifies a number: Add exactly that quantity (e.g., "2 Cappuccinos" = add 2)
+- When customer asks for multiple different items: Add all requested items with their specified quantities
+- Always confirm the exact quantity being added to cart
+- Use clear language like "I've added X [item] to your cart" or "I've added X [item]s to your cart"
+
+**EXAMPLES**:
+- "Add a Cappuccino" → "I've added the Cappuccino (₱200) to your cart"
+- "Add 2 Cappuccinos" → "I've added 2 Cappuccinos (₱200 each) to your cart"
+- "I want a Cappuccino and a Latte" → "I've added the Cappuccino (₱200) and Latte (₱210) to your cart"
+- "Add 3 Cappuccinos and 2 Lattes" → "I've added 3 Cappuccinos (₱200 each) and 2 Lattes (₱210 each) to your cart"
 
 {context}
 

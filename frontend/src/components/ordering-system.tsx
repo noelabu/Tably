@@ -34,6 +34,7 @@ import OrderingMenuTab from './ordering-menu-tab';
 import OrderingVoiceTab from './ordering-voice-tab';
 import { menuItemsService } from '@/services/menu-items';
 import type { MenuItem } from '@/types/menu-items.types';
+import { OrderParser } from '@/services/order-parser';
 
 interface OrderingSystemProps {
   onLogout?: () => void
@@ -60,7 +61,8 @@ const suggestedResponses = [
   "I'd like to see the burger menu",
   "What are your most popular items?",
   "Do you have any vegetarian options?",
-  "What's the total for my order?"
+  "Add a pizza to my order",
+  "I want to add 2 burgers to my cart"
 ]
 
 export default function OrderingSystem({ onLogout }: OrderingSystemProps) {
@@ -81,7 +83,7 @@ export default function OrderingSystem({ onLogout }: OrderingSystemProps) {
   const [transcribedText, setTranscribedText] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [chatService, setChatService] = useState<OrderingChatService | null>(null)
-  const [useStreaming, setUseStreaming] = useState(true)
+  const [useStreaming, setUseStreaming] = useState(false)
 
   // Initialize chat service when user is available
   useEffect(() => {
@@ -129,16 +131,16 @@ export default function OrderingSystem({ onLogout }: OrderingSystemProps) {
     fetchMenu();
   }, [token, businessId]);
 
-  const addToCart = (item: MenuItem) => {
+  const addToCart = (item: MenuItem, quantity: number = 1) => {
     const existingItem = cartItems.find(cartItem => cartItem.id === item.id)
     if (existingItem) {
       setCartItems(cartItems.map(cartItem => 
         cartItem.id === item.id 
-          ? { ...cartItem, quantity: cartItem.quantity + 1 }
+          ? { ...cartItem, quantity: cartItem.quantity + quantity }
           : cartItem
       ))
     } else {
-      setCartItems([...cartItems, { ...item, quantity: 1 }])
+      setCartItems([...cartItems, { ...item, quantity }])
     }
   }
 
@@ -188,8 +190,10 @@ export default function OrderingSystem({ onLogout }: OrderingSystemProps) {
           setChatMessages(prev => [...prev, botMessage])
           
           try {
+            let fullResponse = '';
             for await (const chunk of chatService.streamMessage(currentMessage, context)) {
               if (chunk.type === 'message') {
+                fullResponse += chunk.content;
                 setChatMessages(prev => 
                   prev.map(msg => 
                     msg.id === botMessage.id 
@@ -205,6 +209,30 @@ export default function OrderingSystem({ onLogout }: OrderingSystemProps) {
                       : msg
                   )
                 )
+                break
+              } else if (chunk.type === 'done') {
+                // Parse the complete response for order items
+                try {
+                  const parseResult = OrderParser.parseOrderFromResponse(fullResponse);
+                  
+                  if (parseResult.success && parseResult.items.length > 0) {
+                    const { matched, unmatched } = OrderParser.findMatchingMenuItems(parseResult.items, menuItems);
+                    
+                    // Add matched items to cart with their parsed quantities
+                    parseResult.items.forEach((parsedItem, index) => {
+                      if (index < matched.length) {
+                        addToCart(matched[index], parsedItem.quantity);
+                      }
+                    });
+                    
+                    // Log unmatched items for debugging
+                    if (unmatched.length > 0) {
+                      console.log('Unmatched items:', unmatched);
+                    }
+                  }
+                } catch (error) {
+                  console.error('Error parsing order from streaming response:', error);
+                }
                 break
               }
             }
@@ -227,6 +255,32 @@ export default function OrderingSystem({ onLogout }: OrderingSystemProps) {
             timestamp: new Date()
           }
           setChatMessages(prev => [...prev, botResponse])
+          
+          // Parse the response for order items and add to cart
+          try {
+            const parseResult = OrderParser.parseOrderFromResponse(response.response);
+            console.log('Parsed result:', parseResult); // Debug log
+            
+            if (parseResult.success && parseResult.items.length > 0) {
+              const { matched, unmatched } = OrderParser.findMatchingMenuItems(parseResult.items, menuItems);
+              console.log('Matched items:', matched); // Debug log
+              
+              // Add matched items to cart with their parsed quantities
+              parseResult.items.forEach((parsedItem, index) => {
+                if (index < matched.length) {
+                  console.log(`Adding ${parsedItem.quantity} of ${matched[index].name}`); // Debug log
+                  addToCart(matched[index], parsedItem.quantity);
+                }
+              });
+              
+              // Log unmatched items for debugging
+              if (unmatched.length > 0) {
+                console.log('Unmatched items:', unmatched);
+              }
+            }
+          } catch (error) {
+            console.error('Error parsing order from response:', error);
+          }
         }
       } else {
         // Fallback for non-customers or when service not available

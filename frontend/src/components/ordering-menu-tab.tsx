@@ -11,7 +11,7 @@ interface OrderingMenuTabProps {
   selectedCategory: string;
   setSelectedCategory: (category: string) => void;
   filteredItems: MenuItem[];
-  addToCart: (item: MenuItem) => void;
+  addToCart: (item: MenuItem, quantity?: number) => void;
 }
 
 const OrderingMenuTab: React.FC<OrderingMenuTabProps> = ({

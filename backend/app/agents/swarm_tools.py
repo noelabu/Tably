@@ -5,11 +5,13 @@ import logging
 from app.agents.swarm_orchestrator import process_order_with_swarm, process_order_with_swarm_async
 from app.services.menu_context_service import menu_context_service
 from app.services.conversation_memory import conversation_memory
+from app.services.menu_validator import menu_validator
+import json
 
 logger = logging.getLogger(__name__)
 
 @tool
-def ordering_swarm(
+async def ordering_swarm_async(
     customer_request: str,
     business_id: Optional[str] = None,
     include_menu_context: bool = True,
@@ -44,13 +46,8 @@ def ordering_swarm(
         # Load menu context if requested and business_id provided
         if include_menu_context and business_id:
             try:
-                # Run async function in sync context
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                menu_context = loop.run_until_complete(
-                    menu_context_service.get_business_menu_context(business_id)
-                )
-                loop.close()
+                # Use async version since we're in an async function
+                menu_context = await menu_context_service.get_business_menu_context(business_id)
                 logger.info(f"Loaded menu context for business {business_id}")
             except Exception as e:
                 logger.error(f"Error loading menu context: {e}")
@@ -77,6 +74,18 @@ def ordering_swarm(
             force_swarm=use_swarm_mode
         )
         
+        # Validate response using menu validator
+        if business_id:
+            try:
+                is_valid, corrected_response, available_items = menu_validator.validate_response(result, business_id)
+                
+                if not is_valid:
+                    logger.warning(f"Swarm response contained non-menu items, corrected with actual menu")
+                    result = corrected_response
+                    
+            except Exception as e:
+                logger.error(f"Error validating swarm response: {e}")
+        
         # Add assistant response to conversation
         if session_id:
             try:
@@ -89,6 +98,80 @@ def ordering_swarm(
     except Exception as e:
         logger.error(f"Error in ordering swarm tool: {e}")
         return f"I apologize, but I encountered an error with the ordering system. Error: {str(e)}"
+
+@tool
+def ordering_swarm(
+    customer_request: str,
+    business_id: Optional[str] = None,
+    include_menu_context: bool = True,
+    use_swarm_mode: bool = False,
+    session_id: Optional[str] = None
+) -> str:
+    """Synchronous wrapper for ordering_swarm_async"""
+    try:
+        import asyncio
+        loop = asyncio.get_running_loop()
+        # We're in an event loop, can't use run_until_complete
+        logger.warning("Cannot run async swarm tool - already in event loop")
+        
+        # Try to load menu context synchronously
+        menu_context = None
+        if include_menu_context and business_id:
+            try:
+                # Create a new event loop for this operation
+                import threading
+                import queue
+                
+                def load_menu_context():
+                    try:
+                        new_loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(new_loop)
+                        return new_loop.run_until_complete(
+                            menu_context_service.get_business_menu_context(business_id)
+                        )
+                    finally:
+                        new_loop.close()
+                
+                # Run in a separate thread to avoid event loop conflicts
+                result_queue = queue.Queue()
+                thread = threading.Thread(target=lambda: result_queue.put(load_menu_context()))
+                thread.start()
+                thread.join()
+                
+                if not result_queue.empty():
+                    menu_context = result_queue.get()
+                    logger.info(f"Loaded menu context in separate thread for business {business_id}")
+                else:
+                    logger.warning("Failed to load menu context in separate thread")
+                    
+            except Exception as e:
+                logger.error(f"Error loading menu context in separate thread: {e}")
+        
+        # Process with menu context if available
+        return process_order_with_swarm(
+            customer_request=customer_request,
+            business_id=business_id,
+            menu_context=menu_context,
+            conversation_context=None,
+            force_swarm=use_swarm_mode
+        )
+    except RuntimeError:
+        # No event loop running, we can create one
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        try:
+            return loop.run_until_complete(
+                ordering_swarm_async(
+                    customer_request=customer_request,
+                    business_id=business_id,
+                    include_menu_context=include_menu_context,
+                    use_swarm_mode=use_swarm_mode,
+                    session_id=session_id
+                )
+            )
+        finally:
+            loop.close()
 
 @tool 
 def recommendation_swarm(
@@ -131,12 +214,20 @@ def recommendation_swarm(
         menu_context = None
         if business_id:
             try:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                menu_context = loop.run_until_complete(
-                    menu_context_service.get_business_menu_context(business_id)
-                )
-                loop.close()
+                # Check if we're already in an event loop
+                try:
+                    loop = asyncio.get_running_loop()
+                    # We're in an event loop, can't use run_until_complete
+                    logger.warning("Cannot load menu context - already in event loop")
+                    menu_context = None
+                except RuntimeError:
+                    # No event loop running, we can create one
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    menu_context = loop.run_until_complete(
+                        menu_context_service.get_business_menu_context(business_id)
+                    )
+                    loop.close()
             except Exception as e:
                 logger.error(f"Error loading menu context: {e}")
         
@@ -187,12 +278,20 @@ def multilingual_ordering_swarm(
         menu_context = None
         if business_id:
             try:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                menu_context = loop.run_until_complete(
-                    menu_context_service.get_business_menu_context(business_id)
-                )
-                loop.close()
+                # Check if we're already in an event loop
+                try:
+                    loop = asyncio.get_running_loop()
+                    # We're in an event loop, can't use run_until_complete
+                    logger.warning("Cannot load menu context - already in event loop")
+                    menu_context = None
+                except RuntimeError:
+                    # No event loop running, we can create one
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    menu_context = loop.run_until_complete(
+                        menu_context_service.get_business_menu_context(business_id)
+                    )
+                    loop.close()
             except Exception as e:
                 logger.error(f"Error loading menu context: {e}")
         
