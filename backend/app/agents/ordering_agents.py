@@ -2,6 +2,7 @@ from strands import Agent, tool
 from app.agents.config import bedrock_model
 from app.services.menu_image_analyzer import MenuImageAnalyzer
 from app.services.menu_context_service import menu_context_service
+from app.services.menu_validator import menu_validator
 from typing import Dict, List, Optional, Any, Union
 import json
 import logging
@@ -14,15 +15,28 @@ logger = logging.getLogger(__name__)
 ORDERING_ASSISTANT_PROMPT = """
 You are a friendly and efficient ordering assistant for a restaurant. Your role is to help customers place orders smoothly and accurately.
 
-**CRITICAL REQUIREMENT**: You MUST ONLY recommend, suggest, or mention items that are available in the restaurant's menu provided in your context. NEVER suggest items that are not explicitly listed in the menu data. If a customer asks for something not on the menu, politely inform them it's not available and suggest similar items from the actual menu.
+**CRITICAL REQUIREMENT**: You MUST ONLY recommend, suggest, or mention items that are available in the restaurant's menu provided in your context. NEVER suggest items that are not explicitly listed in the menu data. If a customer asks for something not on the menu, politely inform them it's not available and suggest similar items from the actual menu. When you see "EXPLICIT MENU ITEMS" in your context, you are FORBIDDEN from mentioning any items not in that exact list.
+
+**ABSOLUTE MENU RESTRICTION**:
+- You are FORBIDDEN from mentioning, recommending, or suggesting ANY items that are not explicitly listed in the provided menu data
+- You MUST use the exact item names as they appear in the menu
+- You MUST use the exact prices as listed in the menu
+- If a customer asks for something not in the menu, respond with: "I'm sorry, but [item name] is not available on our current menu. Let me show you what we do have available: [list 2-3 similar items from the menu]"
+- NEVER make up or suggest items that are not in the provided menu data
+- NEVER mention generic food items unless they are specifically listed in the menu
+- If you don't have access to the menu data, say: "I'm sorry, but I don't have access to the current menu. Please ask a staff member for assistance."
+- NEVER suggest generic items like "pizza", "burger", "coffee", "dessert", "salad", "pasta" unless they are specifically listed in the menu
+- If asked about items not in the menu, politely decline and suggest alternatives from the actual menu only
+- **CRITICAL**: If you see "EXPLICIT MENU ITEMS" in the context, you are ONLY allowed to mention those exact items and nothing else
 
 Your responsibilities include:
-1. **Order Taking**: Help customers select menu items, specify quantities, and customize orders
-2. **Order Validation**: Ensure all necessary details are captured (size, modifications, special instructions)
-3. **Order Summary**: Provide clear summaries of orders before confirmation
-4. **Customer Service**: Answer questions about orders, modifications, and timing
-5. **Upselling**: Suggest complementary items or upgrades when appropriate (ONLY from the menu)
-6. **Problem Resolution**: Handle order changes, cancellations, or issues professionally
+1. **Order Taking**: Help customers select menu items, specify quantities, and customize orders (ONLY from menu)
+2. **Cart Management**: When customers want to add items to their order, confirm the addition clearly (ONLY menu items)
+3. **Order Validation**: Ensure all necessary details are captured (size, modifications, special instructions)
+4. **Order Summary**: Provide clear summaries of orders before confirmation
+5. **Customer Service**: Answer questions about orders, modifications, and timing
+6. **Upselling**: Suggest complementary items or upgrades when appropriate (ONLY from the menu)
+7. **Problem Resolution**: Handle order changes, cancellations, or issues professionally
 
 When taking orders:
 - Always confirm quantities and specifications
@@ -32,11 +46,20 @@ When taking orders:
 - Provide accurate pricing from the menu
 - Be patient and helpful with indecisive customers
 
+**CART MANAGEMENT**:
+- When customers ask to add items to their order, respond with clear confirmation
+- Use phrases like "I've added [item name] to your order" or "Added [item name] to your cart"
+- Include quantity if specified (e.g., "I've added 2x [item name] to your order")
+- Mention the price when adding items (e.g., "I've added [item name] (₱[price]) to your order")
+- If customers ask to add multiple items, confirm each one separately
+- ONLY add items that are explicitly listed in the provided menu data
+
 **MENU RESTRICTIONS**:
 - ONLY use items from the provided menu data
 - Use exact item names as they appear in the menu
 - Use exact prices as listed in the menu
 - If an item is not in the menu, say "That item is not available" and suggest alternatives from the menu
+- NEVER suggest generic items like "pizza", "burger", "coffee" unless they are specifically listed in the menu
 
 Order format should include:
 - Item name and quantity (exact name from menu)
@@ -51,7 +74,18 @@ Always be friendly, professional, and efficient while ensuring accuracy.
 RECOMMENDATION_AGENT_PROMPT = """
 You are a specialized recommendation agent for restaurant orders. Your expertise lies in suggesting the perfect menu items based on customer preferences, dietary needs, and dining context.
 
-**CRITICAL REQUIREMENT**: You MUST ONLY recommend items that are available in the restaurant's menu provided in your context. NEVER suggest items that are not explicitly listed in the menu data. All recommendations must come from the actual menu with accurate names and prices.
+**CRITICAL REQUIREMENT**: You MUST ONLY recommend items that are available in the restaurant's menu provided in your context. NEVER suggest items that are not explicitly listed in the menu data. All recommendations must come from the actual menu with accurate names and prices. When you see "EXPLICIT MENU ITEMS" in your context, you are FORBIDDEN from mentioning any items not in that exact list.
+
+**STRICT MENU ENFORCEMENT**:
+- You are ONLY allowed to recommend items that are explicitly listed in the provided menu data
+- You MUST use the exact item names as they appear in the menu
+- You MUST use the exact prices as listed in the menu
+- If a customer asks for something not in the menu, respond with: "I'm sorry, but [item name] is not available on our current menu. Let me show you what we do have available: [list 2-3 similar items from the menu]"
+- NEVER make up or suggest items that are not in the provided menu data
+- NEVER mention generic food items unless they are specifically listed in the menu
+- If you don't have access to the menu data, say: "I'm sorry, but I don't have access to the current menu. Please ask a staff member for assistance."
+- NEVER suggest generic items like "pizza", "burger", "coffee", "dessert", "salad", "pasta" unless they are specifically listed in the menu
+- If asked about items not in the menu, politely decline and suggest alternatives from the actual menu only
 
 Your capabilities include:
 1. **Preference Analysis**: Understand customer tastes, dietary restrictions, and preferences
@@ -66,6 +100,7 @@ Your capabilities include:
 - Use exact item names as they appear in the menu
 - Use exact prices as listed in the menu
 - If no suitable items exist in the menu for a request, explain this and suggest the closest alternatives from the menu
+- NEVER suggest generic items like "pizza", "burger", "coffee" unless they are specifically listed in the menu
 
 When making recommendations:
 - Ask clarifying questions about preferences
@@ -151,6 +186,37 @@ def ordering_assistant_agent(
                 
                 context += f"\n\n{menu_context}"
                 logger.info(f"Loaded menu data for business {business_id}")
+                
+                # Add explicit instruction about available items
+                try:
+                    menu_data = json.loads(menu_context)
+                    if isinstance(menu_data, dict):
+                        # Add explicit menu items if available
+                        if "explicit_menu_items" in menu_data:
+                            context += f"\n\nEXPLICIT MENU ITEMS: {menu_data['explicit_menu_items']}"
+                            context += f"\n\nCRITICAL: You MUST ONLY mention, recommend, or suggest items from this exact list. NEVER suggest items not in this list."
+                        
+                        # Add menu restrictions if available
+                        if "menu_restrictions" in menu_data:
+                            context += f"\n\n{menu_data['menu_restrictions']}"
+                        
+                        # Also add menu items from structured data
+                        if "menu_items" in menu_data:
+                            available_items = []
+                            menu_items = menu_data.get("menu_items", {})
+                            if isinstance(menu_items, dict):
+                                for category, items in menu_items.items():
+                                    if isinstance(items, list):
+                                        for item in items:
+                                            if isinstance(item, dict) and "name" in item and "price" in item:
+                                                available_items.append(f"{item['name']} (₱{item['price']})")
+                            
+                            if available_items:
+                                context += f"\n\nSTRUCTURED MENU ITEMS: {', '.join(available_items)}"
+                                context += f"\n\nCRITICAL: You MUST ONLY mention, recommend, or suggest items from this exact list. NEVER suggest items not in this list."
+                except Exception as e:
+                    logger.error(f"Error parsing menu context: {e}")
+                    
             except Exception as e:
                 logger.error(f"Error loading menu from database: {e}")
                 context += "\nNote: Unable to load restaurant menu. Using general assistance."
@@ -190,6 +256,19 @@ Use this context to help with order modifications, additions, or clarifications.
         
         # Process the customer request
         response = ordering_agent(customer_request)
+        
+        # Validate response using menu validator
+        if business_id:
+            try:
+                is_valid, corrected_response, available_items = menu_validator.validate_response(str(response), business_id)
+                
+                if not is_valid:
+                    logger.warning(f"AI response contained non-menu items, corrected with actual menu")
+                    return corrected_response
+                    
+            except Exception as e:
+                logger.error(f"Error validating menu response: {e}")
+        
         return str(response)
         
     except Exception as e:
@@ -232,6 +311,36 @@ def recommendation_agent(
                 
                 context += f"\n\n{menu_context}"
                 logger.info(f"Loaded menu data for business {business_id}")
+                
+                # Add explicit instruction about available items
+                try:
+                    menu_data = json.loads(menu_context)
+                    if isinstance(menu_data, dict):
+                        # Add explicit menu items if available
+                        if "explicit_menu_items" in menu_data:
+                            context += f"\n\nEXPLICIT MENU ITEMS: {menu_data['explicit_menu_items']}"
+                            context += f"\n\nCRITICAL: You MUST ONLY mention, recommend, or suggest items from this exact list. NEVER suggest items not in this list."
+                        
+                        # Add menu restrictions if available
+                        if "menu_restrictions" in menu_data:
+                            context += f"\n\n{menu_data['menu_restrictions']}"
+                        
+                        # Also add menu items from structured data
+                        if "menu_items" in menu_data:
+                            available_items = []
+                            menu_items = menu_data.get("menu_items", {})
+                            if isinstance(menu_items, dict):
+                                for category, items in menu_items.items():
+                                    if isinstance(items, list):
+                                        for item in items:
+                                            if isinstance(item, dict) and "name" in item and "price" in item:
+                                                available_items.append(f"{item['name']} (₱{item['price']})")
+                            
+                            if available_items:
+                                context += f"\n\nSTRUCTURED MENU ITEMS: {', '.join(available_items)}"
+                                context += f"\n\nCRITICAL: You MUST ONLY mention, recommend, or suggest items from this exact list. NEVER suggest items not in this list."
+                except Exception as e:
+                    logger.error(f"Error parsing menu context: {e}")
             except Exception as e:
                 logger.error(f"Error loading menu from database: {e}")
                 context += "\nNote: Unable to load restaurant menu. Using general recommendations."
@@ -277,6 +386,19 @@ CUSTOMER PREFERENCES: {customer_preferences}
         # Generate recommendations
         query = f"Based on the customer preferences and context provided, please recommend suitable menu items and explain your recommendations."
         response = recommendation_agent_instance(query)
+        
+        # Validate response using menu validator
+        if business_id:
+            try:
+                is_valid, corrected_response, available_items = menu_validator.validate_response(str(response), business_id)
+                
+                if not is_valid:
+                    logger.warning(f"Recommendation response contained non-menu items, corrected with actual menu")
+                    return corrected_response
+                    
+            except Exception as e:
+                logger.error(f"Error validating recommendation response: {e}")
+        
         return str(response)
         
     except Exception as e:

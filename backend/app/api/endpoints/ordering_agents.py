@@ -1,3 +1,4 @@
+import re
 from fastapi import APIRouter, HTTPException, Depends, status, Form, Query
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer
@@ -22,6 +23,34 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+def filter_thinking_tags(content: str) -> str:
+    """
+    Filter out thinking tags from AI responses.
+    
+    Args:
+        content: Raw AI response content
+        
+    Returns:
+        Cleaned content without thinking tags
+    """
+    if not content:
+        return content
+    
+    # Remove thinking tags and their content
+    # Pattern matches <thinking>...</thinking> with any content inside
+    thinking_pattern = r'<thinking>.*?</thinking>'
+    cleaned_content = re.sub(thinking_pattern, '', content, flags=re.DOTALL | re.IGNORECASE)
+    
+    # Also remove any standalone thinking tags
+    standalone_thinking = r'<thinking>.*?'
+    cleaned_content = re.sub(standalone_thinking, '', cleaned_content, flags=re.DOTALL | re.IGNORECASE)
+    
+    # Clean up any extra whitespace that might be left
+    cleaned_content = re.sub(r'\n\s*\n', '\n', cleaned_content)
+    cleaned_content = cleaned_content.strip()
+    
+    return cleaned_content
 
 # Request/Response Models
 class OrderAssistantRequest(BaseModel):
@@ -82,9 +111,12 @@ async def order_assistant_endpoint(
             request.order_context
         )
         
+        # Filter out thinking tags from the response
+        cleaned_response = filter_thinking_tags(response)
+        
         # Create response
         return OrderingResponse(
-            response=response,
+            response=cleaned_response,
             request_id=f"order_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}",
             timestamp=datetime.utcnow().isoformat(),
             agent_type="ordering_assistant"
@@ -117,9 +149,12 @@ async def get_recommendations_endpoint(
             request.occasion
         )
         
+        # Filter out thinking tags from the response
+        cleaned_response = filter_thinking_tags(response)
+        
         # Create response
         return OrderingResponse(
-            response=response,
+            response=cleaned_response,
             request_id=f"rec_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}",
             timestamp=datetime.utcnow().isoformat(),
             agent_type="recommendation"
@@ -150,9 +185,12 @@ async def translate_message_endpoint(
             request.target_language
         )
         
+        # Filter out thinking tags from the response
+        cleaned_response = filter_thinking_tags(response)
+        
         # Create response
         return OrderingResponse(
-            response=response,
+            response=cleaned_response,
             request_id=f"trans_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}",
             timestamp=datetime.utcnow().isoformat(),
             agent_type="translation"
@@ -183,9 +221,12 @@ async def process_multilingual_order_endpoint(
             request.source_language
         )
         
+        # Filter out thinking tags from the response
+        cleaned_response = filter_thinking_tags(response)
+        
         # Create response
         return OrderingResponse(
-            response=response,
+            response=cleaned_response,
             request_id=f"multi_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}",
             timestamp=datetime.utcnow().isoformat(),
             agent_type="multilingual_order"
@@ -217,9 +258,12 @@ async def order_recommendation_combo_endpoint(
             request.language
         )
         
+        # Filter out thinking tags from the response
+        cleaned_response = filter_thinking_tags(response)
+        
         # Create response
         return OrderingResponse(
-            response=response,
+            response=cleaned_response,
             request_id=f"combo_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}",
             timestamp=datetime.utcnow().isoformat(),
             agent_type="order_recommendation_combo"
@@ -247,11 +291,16 @@ async def chat_with_ordering_system(
         response = ordering_swarm(
             customer_request=request.message,
             business_id=request.business_id,
+            include_menu_context=True,
+            use_swarm_mode=False,
             session_id=request.session_id or f"user_{current_user.id}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
         )
         
+        # Filter out thinking tags from the response
+        cleaned_response = filter_thinking_tags(str(response))
+        
         return {
-            "response": str(response),
+            "response": cleaned_response,
             "request_id": f"chat_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}",
             "timestamp": datetime.utcnow().isoformat(),
             "agent_type": "orchestrator"
@@ -288,7 +337,10 @@ async def chat_with_ordering_system_stream(
                 
                 async for event in agent_stream:
                     if "data" in event:
-                        yield f"data: {json.dumps({'content': event['data'], 'type': 'message'})}\n\n"
+                        # Filter out thinking tags from the response
+                        cleaned_content = filter_thinking_tags(event['data'])
+                        if cleaned_content:  # Only send non-empty content
+                            yield f"data: {json.dumps({'content': cleaned_content, 'type': 'message'})}\n\n"
                 
                 # Send completion signal
                 yield f"data: {json.dumps({'content': '[DONE]', 'type': 'done'})}\n\n"

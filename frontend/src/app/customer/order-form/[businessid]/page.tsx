@@ -20,6 +20,7 @@ import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { useCartStore } from '@/stores/cart.store';
 import { OrderingChatService, ChatMessage } from '@/services/ordering-chat';
 import { useAuth } from '@/hooks/use-auth';
+import { OrderParser } from '@/services/order-parser';
 
 // Remove the local CartItem interface and use the imported MenuItem type with an added quantity field
 
@@ -29,7 +30,8 @@ const suggestedResponses = [
   "I'd like to see the burger menu",
   "What are your most popular items?",
   "Do you have any vegetarian options?",
-  "What's the total for my order?"
+  "Add a pizza to my order",
+  "I want to add 2 burgers to my cart"
 ];
 
 export default function OrderFormPage() {
@@ -52,7 +54,7 @@ export default function OrderFormPage() {
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [chatService, setChatService] = useState<OrderingChatService | null>(null);
-  const [useStreaming, setUseStreaming] = useState(true);
+  const [useStreaming, setUseStreaming] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [transcribedText, setTranscribedText] = useState('');
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
@@ -141,8 +143,10 @@ export default function OrderFormPage() {
         setChatMessages(prev => [...prev, botMessage]);
         
         try {
+          let fullResponse = '';
           for await (const chunk of chatService.streamMessage(currentMessage, context, businessId)) {
             if (chunk.type === 'message') {
+              fullResponse += chunk.content;
               setChatMessages(prev => 
                 prev.map(msg => 
                   msg.id === botMessage.id 
@@ -160,6 +164,25 @@ export default function OrderFormPage() {
               );
               break;
             } else if (chunk.type === 'done') {
+              // Parse the complete response for order items
+              try {
+                const parseResult = OrderParser.parseOrderFromResponse(fullResponse);
+                if (parseResult.success && parseResult.items.length > 0) {
+                  const { matched, unmatched } = OrderParser.findMatchingMenuItems(parseResult.items, menuItems);
+                  
+                  // Add matched items to cart
+                  matched.forEach(item => {
+                    addToCart(item);
+                  });
+                  
+                  // Log unmatched items for debugging
+                  if (unmatched.length > 0) {
+                    console.log('Unmatched items:', unmatched);
+                  }
+                }
+              } catch (error) {
+                console.error('Error parsing order from streaming response:', error);
+              }
               break;
             }
           }
@@ -182,6 +205,26 @@ export default function OrderFormPage() {
           timestamp: new Date()
         };
         setChatMessages(prev => [...prev, botResponse]);
+        
+        // Parse the response for order items and add to cart
+        try {
+          const parseResult = OrderParser.parseOrderFromResponse(response.response);
+          if (parseResult.success && parseResult.items.length > 0) {
+            const { matched, unmatched } = OrderParser.findMatchingMenuItems(parseResult.items, menuItems);
+            
+            // Add matched items to cart
+            matched.forEach(item => {
+              addToCart(item);
+            });
+            
+            // Log unmatched items for debugging
+            if (unmatched.length > 0) {
+              console.log('Unmatched items:', unmatched);
+            }
+          }
+        } catch (error) {
+          console.error('Error parsing order from response:', error);
+        }
       }
     } catch (error) {
       console.error('Error sending message:', error);

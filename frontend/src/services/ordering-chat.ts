@@ -40,7 +40,7 @@ export class OrderingChatService {
       business_id: businessId
     };
 
-    return apiService.withAuth(this.token).post<ChatResponse>('/ordering/chat', request);
+    return apiService.withAuth(this.token).post<ChatResponse>('/api/v1/ordering/chat', request);
   }
 
   async *streamMessage(message: string, context?: string, businessId?: string): AsyncGenerator<StreamingChatResponse, void, unknown> {
@@ -110,10 +110,10 @@ export class OrderingChatService {
   }
 
   async getSupportedLanguages() {
-    return apiService.withAuth(this.token).get('/ordering/supported-languages');
+    return apiService.withAuth(this.token).get('/api/v1/ordering/supported-languages');
   }
 
   async getOrderFlowHelp() {
-    return apiService.withAuth(this.token).get('/ordering/order-flow-help');
+    return apiService.withAuth(this.token).get('/api/v1/ordering/order-flow-help');
   }
 }

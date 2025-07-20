@@ -1,3 +1,4 @@
+import re
 from fastapi import APIRouter, HTTPException, Depends, status, UploadFile, File, Form, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.security import HTTPBearer
@@ -20,6 +21,34 @@ from app.agents.menu_agent import (
 )
 from app.agents.orchestrator import orchestrator
 from pydantic import BaseModel, Field
+
+def filter_thinking_tags(content: str) -> str:
+    """
+    Filter out thinking tags from AI responses.
+    
+    Args:
+        content: Raw AI response content
+        
+    Returns:
+        Cleaned content without thinking tags
+    """
+    if not content:
+        return content
+    
+    # Remove thinking tags and their content
+    # Pattern matches <thinking>...</thinking> with any content inside
+    thinking_pattern = r'<thinking>.*?</thinking>'
+    cleaned_content = re.sub(thinking_pattern, '', content, flags=re.DOTALL | re.IGNORECASE)
+    
+    # Also remove any standalone thinking tags
+    standalone_thinking = r'<thinking>.*?'
+    cleaned_content = re.sub(standalone_thinking, '', cleaned_content, flags=re.DOTALL | re.IGNORECASE)
+    
+    # Clean up any extra whitespace that might be left
+    cleaned_content = re.sub(r'\n\s*\n', '\n', cleaned_content)
+    cleaned_content = cleaned_content.strip()
+    
+    return cleaned_content
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -72,9 +101,12 @@ async def chat_with_menu_agent(
         # Use the menu intelligent agent
         response = menu_intelligent_agent(request.query, request.menu_data)
         
+        # Filter out thinking tags from the response
+        cleaned_response = filter_thinking_tags(response)
+        
         # Create response
         menu_response = MenuAgentResponse(
-            response=response,
+            response=cleaned_response,
             query_id=f"query_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}",
             timestamp=datetime.utcnow().isoformat()
         )
@@ -106,7 +138,10 @@ async def chat_with_menu_agent_stream(
                 
                 async for event in agent_stream:
                     if "data" in event:
-                        yield f"data: {json.dumps({'content': event['data']})}\n\n"
+                        # Filter out thinking tags from the response
+                        cleaned_content = filter_thinking_tags(event['data'])
+                        if cleaned_content:  # Only send non-empty content
+                            yield f"data: {json.dumps({'content': cleaned_content})}\n\n"
                 
                 # Send completion signal
                 yield f"data: {json.dumps({'content': '[DONE]'})}\n\n"
@@ -203,9 +238,12 @@ async def get_menu_recommendations_endpoint(
         # Get recommendations using the menu agent
         recommendations = get_menu_recommendations(request.dietary_preferences, request.menu_data)
         
+        # Filter out thinking tags from the response
+        cleaned_recommendations = filter_thinking_tags(recommendations)
+        
         # Create response
         return MenuAgentResponse(
-            response=recommendations,
+            response=cleaned_recommendations,
             query_id=f"recommendations_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}",
             timestamp=datetime.utcnow().isoformat()
         )
@@ -231,9 +269,12 @@ async def search_menu_items_endpoint(
         # Search menu items using the menu agent
         search_results = search_menu_items(request.search_term, request.menu_data)
         
+        # Filter out thinking tags from the response
+        cleaned_search_results = filter_thinking_tags(search_results)
+        
         # Create response
         return MenuAgentResponse(
-            response=search_results,
+            response=cleaned_search_results,
             query_id=f"search_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}",
             timestamp=datetime.utcnow().isoformat()
         )

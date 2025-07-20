@@ -39,13 +39,21 @@ class MenuContextService:
             # Get business information
             business_info = await self._get_business_info(business_id)
             
+            # Create list of available items for the note
+            available_items_list = []
+            for item in menu_data["items"]:
+                available_items_list.append(f"{item['name']} (₱{item['price']})")
+            available_items_text = ", ".join(available_items_list)
+            
             # Create structured response
             context = {
                 "business_id": business_id,
                 "business_info": business_info,
                 "menu_items": formatted_menu,
                 "total_items": len(menu_data["items"]),
-                "note": "Only recommend items from this menu. Prices and availability are current."
+                "note": f"CRITICAL: You are ONLY allowed to mention, recommend, or suggest items that are explicitly listed in this menu. NEVER suggest items that are not in this menu. Use exact item names and prices as shown. If a customer asks for something not listed, politely inform them it's not available and suggest alternatives from this menu only. NEVER mention generic food items like 'pizza', 'burger', 'coffee', 'dessert', 'salad', 'pasta' unless they are specifically listed in this menu. If you don't have access to menu data, say 'I'm sorry, but I don't have access to the current menu. Please ask a staff member for assistance.' AVAILABLE ITEMS ONLY: You must ONLY mention these exact items: {available_items_text}.",
+                "explicit_menu_items": available_items_text,
+                "menu_restrictions": f"ABSOLUTE RESTRICTION: You are FORBIDDEN from mentioning any items not in this list: {available_items_text}. Use ONLY these exact item names and prices."
             }
             
             return json.dumps(context, indent=2)
