@@ -45,6 +45,11 @@ const EnhancedOrderingVoiceTab: React.FC<EnhancedOrderingVoiceTabProps> = ({
   const audioWorkletRef = useRef<AudioWorkletNode | null>(null);
   const recordingChunksRef = useRef<Blob[]>([]);
   
+  // Audio queue system for fluid playback
+  const audioQueueRef = useRef<Array<{ data: string; sampleRate: number }>>([]);
+  const isPlayingQueueRef = useRef(false);
+  const currentSourceRef = useRef<AudioBufferSourceNode | null>(null);
+  
   // Get auth token
   const token = useAuthStore((state) => state.tokens?.access_token || '');
   
@@ -159,21 +164,27 @@ const EnhancedOrderingVoiceTab: React.FC<EnhancedOrderingVoiceTabProps> = ({
     wsRef.current = ws;
   }, [isMuted]);
 
-  // Play audio from base64 data
-  const playAudioFromBase64 = useCallback(async (base64Data: string, sampleRate: number = 24000) => {
-    try {
-      console.log('Starting audio playback:', {
-        base64Length: base64Data.length,
-        sampleRate,
-        audioContextExists: !!audioContextRef.current
-      });
-      
-      setIsPlaying(true);
-      
-      // Decode base64 to binary
-      const bytes = AudioUtils.base64ToArrayBuffer(base64Data);
-      console.log('Decoded audio bytes:', bytes.byteLength);
+  // Add audio chunk to queue for fluid playback
+  const enqueueAudio = useCallback((base64Data: string, sampleRate: number = 24000) => {
+    audioQueueRef.current.push({ data: base64Data, sampleRate });
+    console.log('Audio chunk enqueued. Queue length:', audioQueueRef.current.length);
+    
+    // Start processing queue if not already playing
+    if (!isPlayingQueueRef.current) {
+      processAudioQueue();
+    }
+  }, []);
 
+  // Process audio queue for seamless playback
+  const processAudioQueue = useCallback(async () => {
+    if (isPlayingQueueRef.current || audioQueueRef.current.length === 0) {
+      return;
+    }
+
+    isPlayingQueueRef.current = true;
+    setIsPlaying(true);
+
+    try {
       // Create audio context if needed
       if (!audioContextRef.current) {
         audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -182,40 +193,95 @@ const EnhancedOrderingVoiceTab: React.FC<EnhancedOrderingVoiceTabProps> = ({
 
       const audioContext = audioContextRef.current;
       
-      // Resume audio context if suspended (required by browsers)
+      // Resume audio context if suspended
       if (audioContext.state === 'suspended') {
         console.log('Resuming suspended AudioContext');
         await audioContext.resume();
       }
-      
-      // Convert PCM to Float32Array
-      const float32Data = AudioUtils.pcmToFloat32(bytes);
-      console.log('Converted to Float32Array:', float32Data.length, 'samples');
-      
-      // Create audio buffer
-      const audioBuffer = audioContext.createBuffer(1, float32Data.length, sampleRate);
-      audioBuffer.copyToChannel(float32Data, 0);
-      console.log('Created audio buffer:', audioBuffer.duration, 'seconds');
 
-      // Play audio
-      const source = audioContext.createBufferSource();
-      source.buffer = audioBuffer;
-      source.connect(audioContext.destination);
-      
-      source.onended = () => {
-        console.log('Audio playback ended');
-        setIsPlaying(false);
-      };
-      
-      console.log('Starting audio source...');
-      source.start();
-      console.log('Audio source started successfully');
-      
+      let startTime = audioContext.currentTime;
+      const sources: AudioBufferSourceNode[] = [];
+
+      // Process all chunks in queue
+      while (audioQueueRef.current.length > 0) {
+        const chunk = audioQueueRef.current.shift()!;
+        
+        try {
+          // Decode base64 to binary
+          const bytes = AudioUtils.base64ToArrayBuffer(chunk.data);
+          
+          // Convert PCM to Float32Array
+          const float32Data = AudioUtils.pcmToFloat32(bytes);
+          
+          // Create audio buffer
+          const audioBuffer = audioContext.createBuffer(1, float32Data.length, chunk.sampleRate);
+          audioBuffer.copyToChannel(float32Data, 0);
+          
+          // Create source and schedule playback
+          const source = audioContext.createBufferSource();
+          source.buffer = audioBuffer;
+          source.connect(audioContext.destination);
+          
+          // Schedule this chunk to play immediately after the previous one
+          source.start(startTime);
+          startTime += audioBuffer.duration;
+          
+          sources.push(source);
+          currentSourceRef.current = source;
+          
+          console.log(`Audio chunk scheduled at ${startTime - audioBuffer.duration}, duration: ${audioBuffer.duration}s`);
+          
+        } catch (chunkError) {
+          console.error('Error processing audio chunk:', chunkError);
+        }
+      }
+
+      // Set up completion handler for the last source
+      if (sources.length > 0) {
+        const lastSource = sources[sources.length - 1];
+        lastSource.onended = () => {
+          console.log('Audio queue playback completed');
+          isPlayingQueueRef.current = false;
+          currentSourceRef.current = null;
+          setIsPlaying(false);
+          
+          // Check if more audio was queued while playing
+          if (audioQueueRef.current.length > 0) {
+            console.log('More audio queued, continuing playback...');
+            processAudioQueue();
+          }
+        };
+      }
+
     } catch (error) {
-      console.error('Error playing audio:', error);
+      console.error('Error processing audio queue:', error);
+      isPlayingQueueRef.current = false;
       setIsPlaying(false);
     }
   }, []);
+
+  // Stop current audio playback
+  const stopAudioPlayback = useCallback(() => {
+    if (currentSourceRef.current) {
+      try {
+        currentSourceRef.current.stop();
+        currentSourceRef.current = null;
+      } catch (error) {
+        console.warn('Error stopping audio source:', error);
+      }
+    }
+    
+    // Clear queue and reset state
+    audioQueueRef.current = [];
+    isPlayingQueueRef.current = false;
+    setIsPlaying(false);
+    console.log('Audio playback stopped and queue cleared');
+  }, []);
+
+  // Legacy function for backward compatibility (now uses queue)
+  const playAudioFromBase64 = useCallback(async (base64Data: string, sampleRate: number = 24000) => {
+    enqueueAudio(base64Data, sampleRate);
+  }, [enqueueAudio]);
 
   // Create ref to track recording state to avoid stale closures
   const isRecordingRef = useRef(false);
@@ -350,6 +416,9 @@ const EnhancedOrderingVoiceTab: React.FC<EnhancedOrderingVoiceTabProps> = ({
       // Stop recording
       setIsRecording(false);
 
+      // Stop any ongoing audio playback
+      stopAudioPlayback();
+
       // Close WebSocket
       if (wsRef.current) {
         // Only send end_session message if WebSocket is in OPEN state
@@ -385,7 +454,7 @@ const EnhancedOrderingVoiceTab: React.FC<EnhancedOrderingVoiceTabProps> = ({
     } catch (error) {
       console.error('Error ending voice session:', error);
     }
-  }, [currentSession, token, onSessionEnd]);
+  }, [currentSession, token, onSessionEnd, stopAudioPlayback]);
 
   // Toggle recording
   const toggleRecording = useCallback(() => {
@@ -556,6 +625,17 @@ const EnhancedOrderingVoiceTab: React.FC<EnhancedOrderingVoiceTabProps> = ({
                 {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
                 <span>{isMuted ? 'Unmute' : 'Mute'}</span>
               </Button>
+
+              {isPlaying && (
+                <Button
+                  variant="outline"
+                  onClick={stopAudioPlayback}
+                  className="flex items-center space-x-2"
+                >
+                  <VolumeX className="w-4 h-4" />
+                  <span>Stop Audio</span>
+                </Button>
+              )}
 
               <Button
                 variant="destructive"
