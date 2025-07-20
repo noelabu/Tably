@@ -113,7 +113,7 @@ FORMAT = pyaudio.paInt16
 CHUNK_SIZE = 1024
 
 # Debug mode flag
-DEBUG = False
+DEBUG = True
 
 def debug_print(message):
     """Print only if debug mode is enabled"""
@@ -140,13 +140,32 @@ async def time_it_async(label, methodToRun):
 class RestaurantToolProcessor:
     """Processes restaurant-specific tools for ordering."""
     
-    def __init__(self, business_id: str):
+    def __init__(self, business_id: str, cart_event_callback=None):
         self.business_id = business_id
         self.menu_db = MenuItemsConnection()
         self.orders_db = OrdersConnection()
         self.current_order: List[Dict] = []
         self.customer_info: Dict[str, Any] = {}
         self.tasks = {}
+        self.cart_event_callback = cart_event_callback
+    
+    async def emit_cart_event(self, action: str, item: Dict = None, cart_items: List[Dict] = None):
+        """Emit cart update event to WebSocket if callback is available"""
+        if self.cart_event_callback:
+            total = sum(item["unit_price"] * item["quantity"] for item in self.current_order)
+            cart_event = {
+                "type": "cart_updated",
+                "action": action,  # add, remove, update, clear
+                "item": item,
+                "cart_items": cart_items or self.current_order,
+                "cart_total": total,
+                "item_count": len(self.current_order)
+            }
+            try:
+                await self.cart_event_callback(cart_event)
+                debug_print(f"Emitted cart event: {action}")
+            except Exception as e:
+                debug_print(f"Error emitting cart event: {e}")
     
     async def process_tool_async(self, tool_name, tool_content):
         """Process a tool call asynchronously and return the result"""
@@ -337,6 +356,9 @@ class RestaurantToolProcessor:
                 self.current_order.append(order_item)
                 action = "added"
             
+            # Emit cart event
+            await self.emit_cart_event("add", order_item)
+            
             total_price = order_item["unit_price"] * quantity
             
             return {
@@ -365,13 +387,19 @@ class RestaurantToolProcessor:
                 if order_item["name"].lower() == item_name.lower():
                     if quantity is None or quantity >= order_item["quantity"]:
                         removed_quantity = order_item["quantity"]
+                        removed_item = order_item.copy()
                         self.current_order.pop(i)
+                        # Emit cart event for removal
+                        await self.emit_cart_event("remove", removed_item)
                         return {
                             "success": True,
                             "message": f"Removed all {removed_quantity} {order_item['name']} from order"
                         }
                     else:
+                        original_quantity = order_item["quantity"]
                         order_item["quantity"] -= quantity
+                        # Emit cart event for quantity update
+                        await self.emit_cart_event("update", order_item)
                         return {
                             "success": True,
                             "message": f"Removed {quantity} {order_item['name']}. {order_item['quantity']} remaining"
@@ -472,6 +500,9 @@ class RestaurantToolProcessor:
                 # Clear current order
                 self.current_order = []
                 self.customer_info = {}
+                
+                # Emit cart clear event
+                await self.emit_cart_event("clear", cart_items=[])
                 
                 return {
                     "success": True,
@@ -636,8 +667,8 @@ class RestaurantStreamManager:
         self.toolUseId = ""
         self.toolName = ""
 
-        # Add restaurant tool processor
-        self.tool_processor = RestaurantToolProcessor(business_id)
+        # Add restaurant tool processor with cart event callback
+        self.tool_processor = RestaurantToolProcessor(business_id, self.emit_cart_event)
         
         # Add tracking for in-progress tool calls
         self.pending_tool_tasks = {}
@@ -646,20 +677,35 @@ class RestaurantStreamManager:
         self.last_interaction_time = None
         self.idle_timeout = 30  # 30 seconds of silence before prompting
 
+    async def emit_cart_event(self, cart_data):
+        """Emit cart event to WebSocket output queue"""
+        try:
+            await self.output_queue.put(cart_data)
+            debug_print(f"Cart event emitted: {cart_data.get('action', 'unknown')}")
+        except Exception as e:
+            debug_print(f"Error emitting cart event: {e}")
+
     def _initialize_client(self):
         """Initialize the Bedrock client."""
+        debug_print("Checking AWS SDK availability")
         # Check if AWS SDK is available
         if not AWS_SDK_AVAILABLE:
+            debug_print("AWS SDK not available")
             raise ValueError("AWS SDK for Bedrock Runtime is not installed. Install with: pip install aws-sdk-bedrock-runtime")
         
+        debug_print("AWS SDK available, checking credentials")
         # Check if AWS credentials are available
         aws_access_key = os.getenv('AWS_ACCESS_KEY_ID')
         aws_secret_key = os.getenv('AWS_SECRET_ACCESS_KEY')
         
+        debug_print(f"AWS_ACCESS_KEY_ID: {'***' if aws_access_key else 'NOT SET'}")
+        debug_print(f"AWS_SECRET_ACCESS_KEY: {'***' if aws_secret_key else 'NOT SET'}")
         
         if not aws_access_key or not aws_secret_key:
+            debug_print("Missing AWS credentials")
             raise ValueError("AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are required")
         
+        debug_print(f"Creating Bedrock client config for region: {self.region}")
         config = Config(
             endpoint_uri=f"https://bedrock-runtime.{self.region}.amazonaws.com",
             region=self.region,
@@ -667,7 +713,9 @@ class RestaurantStreamManager:
             http_auth_scheme_resolver=HTTPAuthSchemeResolver(),
             http_auth_schemes={"aws.auth#sigv4": SigV4AuthScheme()}
         )
+        debug_print("Creating BedrockRuntimeClient")
         self.bedrock_client = BedrockRuntimeClient(config=config)
+        debug_print("Bedrock client created successfully")
     
     def start_prompt(self):
         """Create a promptStart event with restaurant tools"""
@@ -856,44 +904,34 @@ class RestaurantStreamManager:
     
     async def initialize_stream(self):
         """Initialize the bidirectional stream with Bedrock."""
+        debug_print("Starting stream initialization")
         if not self.bedrock_client:
+            debug_print("Initializing Bedrock client")
             self._initialize_client()
         
         try:
+            debug_print("Calling Bedrock invoke_model_with_bidirectional_stream")
             self.stream_response = await time_it_async("invoke_model_with_bidirectional_stream", lambda: self.bedrock_client.invoke_model_with_bidirectional_stream(InvokeModelWithBidirectionalStreamOperationInput(model_id=self.model_id)))
             self.is_active = True
+            debug_print("Stream response created, setting is_active = True")
             
-            # Restaurant-specific system prompt 
-            restaurant_system_prompt = f"""You are a friendly, efficient voice ordering assistant for a restaurant (Business ID: {self.business_id}). 
-            Your goal is to help customers place orders through natural conversation.
+            # Restaurant-specific system prompt - Simplified for better responsiveness
+            restaurant_system_prompt = """You are a friendly voice ordering assistant for a restaurant. 
 
-            IMPORTANT CONVERSATION RULES:
-            - Start with a brief greeting and ask how you can help
-            - After each response, WAIT for the customer to respond
-            - Keep responses SHORT (1-2 sentences max)
-            - Ask ONE question at a time
-            - Don't ramble or give long explanations
-            - If customer is silent for more than 10 seconds, ask if they need help
+            CRITICAL MENU GUARDRAILS - STRICTLY FOLLOW THESE RULES:
+            1. NEVER recommend any item without first checking if it exists using getMenuItemsTool or searchMenuItemsTool
+            2. ONLY suggest items that you have confirmed are available in the current menu
+            3. If a customer asks for something not on the menu, say "I'm sorry, we don't have [item] on our menu today. Let me show you what we do have..." then use getMenuItemsTool
+            4. Before making ANY recommendation, you MUST first search the menu to verify the item exists
+            5. If unsure about any item, always check the menu first rather than guessing
 
-            Key responsibilities:
-            1. Greet customers warmly and ask how you can help
-            2. Present menu items clearly when asked
-            3. Help customers add items to their order using the available tools
-            4. Handle modifications and special requests
-            5. Confirm order details before finalizing
-            6. Collect customer information (name, phone)
-            7. Be conversational and helpful
+            CONVERSATION FLOW:
+            - Greet: "Hi! Welcome to our restaurant. How can I help you today?"
+            - When customers ask for items: First search menu, then recommend only confirmed items
+            - Keep responses SHORT and conversational
+            - Always verify menu availability before suggestions
 
-            Guidelines:
-            - Speak naturally but CONCISELY
-            - Ask clarifying questions when items are ambiguous
-            - Suggest popular items or categories when customers seem unsure
-            - Always confirm quantities and special instructions
-            - Keep responses SHORT and to the point
-            - When reading order numbers, read each digit individually with pauses
-
-            Use the available tools to access menu items, manage orders, and complete transactions.
-            When the customer seems ready to order, guide them through the process step by step."""
+            ABSOLUTE RULE: Zero tolerance for recommending non-menu items. Always check first."""
             
             # Send initialization events
             prompt_event = self.start_prompt()
@@ -1193,7 +1231,14 @@ class RestaurantStreamManager:
                         print(f"Error receiving response: {e}")
                         debug_print(f"Exception type: {type(e)}")
                         debug_print(f"Exception details: {e}")
-                    break
+                    
+                    # Only break on critical errors, continue on recoverable ones
+                    if "Connection" in error_str or "Stream" in error_str or "closed" in error_str.lower():
+                        debug_print("Critical stream error, terminating response processing")
+                        break
+                    else:
+                        debug_print("Non-critical error, continuing response processing")
+                        continue
                     
         except Exception as e:
             print(f"Response processing error: {e}")

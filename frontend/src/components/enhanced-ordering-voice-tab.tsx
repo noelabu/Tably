@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Mic, MicOff, Volume2, VolumeX, Loader2, MessageCircle } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth.store';
+import { useCartStore, type VoiceCartEvent } from '@/stores/cart.store';
 import { voiceOrderingService, AudioUtils, type VoiceSession } from '@/services/voice-ordering';
 import { useAudioSupport } from '@/hooks/use-audio-support';
 
@@ -53,8 +54,16 @@ const EnhancedOrderingVoiceTab: React.FC<EnhancedOrderingVoiceTabProps> = ({
   // Get auth token
   const token = useAuthStore((state) => state.tokens?.access_token || '');
   
+  // Cart store for voice synchronization
+  const { syncFromVoice, setBusinessId } = useCartStore();
+  
   // Audio support check
   const audioSupport = useAudioSupport();
+
+  // Set business ID in cart store when component mounts
+  useEffect(() => {
+    setBusinessId(businessId);
+  }, [businessId, setBusinessId]);
 
   // Create voice session
   const createVoiceSession = useCallback(async (): Promise<VoiceSession> => {
@@ -134,8 +143,38 @@ const EnhancedOrderingVoiceTab: React.FC<EnhancedOrderingVoiceTabProps> = ({
             }]);
             break;
             
+          case 'cart_updated':
+            console.log('Received cart update:', data);
+            try {
+              // Sync cart with voice agent updates
+              syncFromVoice(data as VoiceCartEvent);
+              
+              // Add cart update to conversation history for user visibility
+              const actionText = data.action === 'add' ? 'Added to cart' : 
+                                data.action === 'remove' ? 'Removed from cart' : 
+                                data.action === 'update' ? 'Updated cart' : 
+                                data.action === 'clear' ? 'Cleared cart' : 'Cart updated';
+              
+              const itemText = data.item ? `: ${data.item.name} (${data.item.quantity}x)` : '';
+              const totalText = ` | Total: $${data.cart_total?.toFixed(2) || '0.00'}`;
+              
+              setConversationHistory(prev => [...prev, {
+                type: 'assistant',
+                content: `${actionText}${itemText}${totalText}`,
+                timestamp: new Date()
+              }]);
+              
+            } catch (error) {
+              console.error('Error handling cart update:', error);
+            }
+            break;
+            
           case 'pong':
             console.log('Received pong');
+            break;
+            
+          case 'heartbeat':
+            console.log('Received heartbeat');
             break;
             
           default:
@@ -539,6 +578,7 @@ const EnhancedOrderingVoiceTab: React.FC<EnhancedOrderingVoiceTabProps> = ({
               🔊 Playing Response
             </Badge>
           )}
+          
         </div>
       </div>
 
@@ -625,6 +665,7 @@ const EnhancedOrderingVoiceTab: React.FC<EnhancedOrderingVoiceTabProps> = ({
                 {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
                 <span>{isMuted ? 'Unmute' : 'Mute'}</span>
               </Button>
+
 
               {isPlaying && (
                 <Button

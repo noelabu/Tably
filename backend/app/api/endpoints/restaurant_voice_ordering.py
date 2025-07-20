@@ -189,8 +189,8 @@ async def websocket_voice_endpoint(websocket: WebSocket, session_id: str):
     # Initialize the stream now that WebSocket is connected
     try:
         logger.info(f"Initializing AWS stream for session: {session_id}")
-        # Add timeout to prevent hanging
-        await asyncio.wait_for(stream_manager.initialize_stream(), timeout=30.0)
+        # Add timeout to prevent hanging - increased to 60 seconds for AWS Bedrock
+        await asyncio.wait_for(stream_manager.initialize_stream(), timeout=60.0)
         logger.info(f"AWS stream initialized for session: {session_id}")
     except asyncio.TimeoutError:
         logger.error(f"AWS stream initialization timed out for session {session_id}")
@@ -251,7 +251,8 @@ async def websocket_voice_endpoint(websocket: WebSocket, session_id: str):
                     continue
                 except Exception as e:
                     logger.error(f"Error sending audio output: {e}")
-                    break
+                    # Don't break on audio errors, just continue
+                    continue
             
             logger.info(f"Audio output handler ended for session: {session_id}")
         
@@ -275,7 +276,8 @@ async def websocket_voice_endpoint(websocket: WebSocket, session_id: str):
                     continue
                 except Exception as e:
                     logger.error(f"Error sending text output: {e}")
-                    break
+                    # Don't break on text output errors, just continue
+                    continue
             
             logger.info(f"Text output handler ended for session: {session_id}")
         
@@ -286,6 +288,25 @@ async def websocket_voice_endpoint(websocket: WebSocket, session_id: str):
         # Start text output task
         logger.info(f"Starting text output task for session: {session_id}")
         text_task = asyncio.create_task(handle_text_output())
+        
+        # Heartbeat task to keep session alive
+        async def heartbeat():
+            """Send periodic heartbeat to keep connection alive"""
+            while stream_manager.is_active:
+                try:
+                    await asyncio.sleep(30)  # Send heartbeat every 30 seconds
+                    if websocket.client_state.name == 'CONNECTED':
+                        await websocket.send_text(json.dumps({
+                            "type": "heartbeat",
+                            "timestamp": datetime.now().isoformat(),
+                            "session_id": session_id
+                        }))
+                        logger.debug(f"Sent heartbeat for session: {session_id}")
+                except Exception as e:
+                    logger.debug(f"Heartbeat failed for session {session_id}: {e}")
+                    break
+        
+        heartbeat_task = asyncio.create_task(heartbeat())
         
         # Handle incoming messages
         logger.info(f"Starting message loop for session: {session_id}")
@@ -314,6 +335,7 @@ async def websocket_voice_endpoint(websocket: WebSocket, session_id: str):
                         # Generate a unique content name for this text input
                         import uuid
                         text_content_name = str(uuid.uuid4())
+                        logger.info(f"Generated text content name: {text_content_name}")
                         
                         # Send text content start event
                         text_content_start = stream_manager.TEXT_CONTENT_START_EVENT % (
@@ -321,27 +343,35 @@ async def websocket_voice_endpoint(websocket: WebSocket, session_id: str):
                             text_content_name, 
                             "USER"
                         )
+                        logger.info(f"Sending text content start event: {text_content_start[:200]}...")
                         await stream_manager.send_raw_event(text_content_start)
+                        logger.info(f"Text content start event sent")
                         
                         # Send text content with initial greeting request
-                        greeting_text = "Hello, I'd like to place an order."
+                        greeting_text = "Hi there!"
                         text_content = stream_manager.TEXT_INPUT_EVENT % (
                             stream_manager.prompt_name, 
                             text_content_name, 
                             greeting_text
                         )
+                        logger.info(f"Sending text content: {text_content[:200]}...")
                         await stream_manager.send_raw_event(text_content)
+                        logger.info(f"Text content sent")
                         
                         # Send text content end event
                         text_content_end = stream_manager.CONTENT_END_EVENT % (
                             stream_manager.prompt_name, 
                             text_content_name
                         )
+                        logger.info(f"Sending text content end event: {text_content_end[:200]}...")
                         await stream_manager.send_raw_event(text_content_end)
+                        logger.info(f"Text content end event sent")
                         
                         logger.info(f"Sent text conversation starter for session: {session_id}")
                     except Exception as e:
                         logger.error(f"Error starting conversation: {e}")
+                        import traceback
+                        logger.error(f"Full traceback: {traceback.format_exc()}")
                 
                 elif message.get("type") == "end_session":
                     # End the session
@@ -355,14 +385,24 @@ async def websocket_voice_endpoint(websocket: WebSocket, session_id: str):
                     }))
                 
             except WebSocketDisconnect:
+                logger.info(f"WebSocket disconnected for session: {session_id}")
                 break
             except Exception as e:
                 logger.error(f"Error in WebSocket loop: {e}")
-                break
+                # Log the error but don't break immediately - some errors might be recoverable
+                import traceback
+                logger.error(f"WebSocket error traceback: {traceback.format_exc()}")
+                # Only break on critical errors
+                if "Connection" in str(e) or "closed" in str(e).lower():
+                    logger.error(f"Critical connection error, ending session: {e}")
+                    break
+                # For other errors, continue and try to recover
+                continue
         
-        # Cancel output tasks
+        # Cancel all tasks
         output_task.cancel()
         text_task.cancel()
+        heartbeat_task.cancel()
         
         # End the voice stream safely
         try:
