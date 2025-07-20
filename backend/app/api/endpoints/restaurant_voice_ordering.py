@@ -45,14 +45,15 @@ class VoiceStreamManager:
         
         try:
             # Create stream manager
+            logger.info(f"Creating stream manager for business: {business_id}")
             stream_manager = RestaurantStreamManager(
                 business_id=business_id, 
                 model_id='amazon.nova-sonic-v1:0', 
                 region='us-east-1'
             )
             
-            # Initialize the stream
-            await stream_manager.initialize_stream()
+            # Don't initialize the stream yet - wait for WebSocket connection
+            logger.info(f"Stream manager created for session: {session_id} (will initialize on WebSocket connection)")
             
             # Store session
             self.active_sessions[session_id] = stream_manager
@@ -124,7 +125,10 @@ async def create_voice_session(request: VoiceSessionRequest) -> VoiceSessionResp
         )
         
     except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
         logger.error(f"Error creating voice session: {str(e)}")
+        logger.error(f"Full traceback: {error_details}")
         raise HTTPException(status_code=500, detail=f"Failed to create voice session: {str(e)}")
 
 @router.get("/sessions/{session_id}")
@@ -146,9 +150,13 @@ async def end_voice_session(session_id: str) -> Dict[str, str]:
     """End a voice ordering session."""
     success = await voice_manager.end_session(session_id)
     
-    if not success:
-        raise HTTPException(status_code=404, detail="Voice session not found or already ended")
+    # Check if session exists in session_info (even if not active)
+    session_info = voice_manager.get_session_info(session_id)
     
+    if not success and not session_info:
+        raise HTTPException(status_code=404, detail="Voice session not found")
+    
+    # If session existed but was already ended, return success
     return {"message": "Voice session ended successfully"}
 
 @router.get("/sessions")
@@ -165,15 +173,41 @@ async def list_voice_sessions() -> Dict[str, Any]:
 @router.websocket("/ws/{session_id}")
 async def websocket_voice_endpoint(websocket: WebSocket, session_id: str):
     """WebSocket endpoint for real-time voice streaming."""
+    logger.info(f"WebSocket connection attempt for session: {session_id}")
     await websocket.accept()
+    logger.info(f"WebSocket accepted for session: {session_id}")
     
     # Get the session
     stream_manager = voice_manager.get_session(session_id)
     if not stream_manager:
+        logger.error(f"Session {session_id} not found")
         await websocket.close(code=4004, reason="Session not found")
         return
     
+    logger.info(f"Stream manager found for session: {session_id}")
+    
+    # Initialize the stream now that WebSocket is connected
     try:
+        logger.info(f"Initializing AWS stream for session: {session_id}")
+        # Add timeout to prevent hanging
+        await asyncio.wait_for(stream_manager.initialize_stream(), timeout=30.0)
+        logger.info(f"AWS stream initialized for session: {session_id}")
+    except asyncio.TimeoutError:
+        logger.error(f"AWS stream initialization timed out for session {session_id}")
+        await websocket.close(code=4000, reason="Stream initialization timed out")
+        return
+    except Exception as init_error:
+        logger.error(f"Failed to initialize AWS stream for session {session_id}: {init_error}")
+        await websocket.close(code=4000, reason=f"Stream initialization failed: {str(init_error)}")
+        return
+    
+    try:
+        # Check if WebSocket is still connected before sending
+        if websocket.client_state.name == 'DISCONNECTED':
+            logger.warning(f"WebSocket already disconnected for session: {session_id}")
+            return
+            
+        logger.info(f"Sending session ready message for session: {session_id}")
         await websocket.send_text(json.dumps({
             "type": "session_ready",
             "session_id": session_id,
@@ -185,19 +219,23 @@ async def websocket_voice_endpoint(websocket: WebSocket, session_id: str):
                 "encoding": "base64"
             }
         }))
+        logger.info(f"Session ready message sent for session: {session_id}")
         
         # Create tasks for handling audio input and output
         async def handle_audio_output():
             """Send audio output to WebSocket"""
+            logger.info(f"Audio output handler started for session: {session_id}")
             while stream_manager.is_active:
                 try:
                     # Get audio output from stream manager
+                    logger.debug(f"Waiting for audio output from stream manager...")
                     audio_data = await asyncio.wait_for(
                         stream_manager.audio_output_queue.get(),
                         timeout=1.0
                     )
                     
                     if audio_data:
+                        logger.info(f"Received audio output: {len(audio_data)} bytes")
                         # Send audio data as base64
                         audio_b64 = base64.b64encode(audio_data).decode('utf-8')
                         await websocket.send_text(json.dumps({
@@ -206,22 +244,57 @@ async def websocket_voice_endpoint(websocket: WebSocket, session_id: str):
                             "format": "pcm16",
                             "sample_rate": 24000
                         }))
+                        logger.info(f"Sent audio output to WebSocket: {len(audio_b64)} base64 chars")
                         
                 except asyncio.TimeoutError:
+                    logger.debug(f"Audio output timeout (no data)")
                     continue
                 except Exception as e:
                     logger.error(f"Error sending audio output: {e}")
                     break
+            
+            logger.info(f"Audio output handler ended for session: {session_id}")
+        
+        async def handle_text_output():
+            """Send text output to WebSocket"""
+            logger.info(f"Text output handler started for session: {session_id}")
+            while stream_manager.is_active:
+                try:
+                    # Get text/other output from stream manager
+                    output_data = await asyncio.wait_for(
+                        stream_manager.output_queue.get(),
+                        timeout=1.0
+                    )
+                    
+                    if output_data and isinstance(output_data, dict):
+                        logger.info(f"Received output: {output_data.get('type')}")
+                        await websocket.send_text(json.dumps(output_data))
+                        logger.info(f"Sent output to WebSocket: {output_data.get('type')}")
+                        
+                except asyncio.TimeoutError:
+                    continue
+                except Exception as e:
+                    logger.error(f"Error sending text output: {e}")
+                    break
+            
+            logger.info(f"Text output handler ended for session: {session_id}")
         
         # Start audio output task
+        logger.info(f"Starting audio output task for session: {session_id}")
         output_task = asyncio.create_task(handle_audio_output())
         
+        # Start text output task
+        logger.info(f"Starting text output task for session: {session_id}")
+        text_task = asyncio.create_task(handle_text_output())
+        
         # Handle incoming messages
+        logger.info(f"Starting message loop for session: {session_id}")
         while stream_manager.is_active:
             try:
                 # Receive message from WebSocket
                 data = await websocket.receive_text()
                 message = json.loads(data)
+                logger.info(f"Received WebSocket message: {message.get('type')}")
                 
                 if message.get("type") == "audio_input":
                     # Process audio input
@@ -232,6 +305,43 @@ async def websocket_voice_endpoint(websocket: WebSocket, session_id: str):
                             stream_manager.add_audio_chunk(audio_bytes)
                         except Exception as e:
                             logger.error(f"Error processing audio input: {e}")
+                
+                elif message.get("type") == "start_conversation":
+                    # Trigger initial greeting from the voice agent
+                    logger.info(f"Starting conversation for session: {session_id}")
+                    # Send a text message to trigger the initial greeting
+                    try:
+                        # Generate a unique content name for this text input
+                        import uuid
+                        text_content_name = str(uuid.uuid4())
+                        
+                        # Send text content start event
+                        text_content_start = stream_manager.TEXT_CONTENT_START_EVENT % (
+                            stream_manager.prompt_name, 
+                            text_content_name, 
+                            "USER"
+                        )
+                        await stream_manager.send_raw_event(text_content_start)
+                        
+                        # Send text content with initial greeting request
+                        greeting_text = "Hello, I'd like to place an order."
+                        text_content = stream_manager.TEXT_INPUT_EVENT % (
+                            stream_manager.prompt_name, 
+                            text_content_name, 
+                            greeting_text
+                        )
+                        await stream_manager.send_raw_event(text_content)
+                        
+                        # Send text content end event
+                        text_content_end = stream_manager.CONTENT_END_EVENT % (
+                            stream_manager.prompt_name, 
+                            text_content_name
+                        )
+                        await stream_manager.send_raw_event(text_content_end)
+                        
+                        logger.info(f"Sent text conversation starter for session: {session_id}")
+                    except Exception as e:
+                        logger.error(f"Error starting conversation: {e}")
                 
                 elif message.get("type") == "end_session":
                     # End the session
@@ -250,20 +360,31 @@ async def websocket_voice_endpoint(websocket: WebSocket, session_id: str):
                 logger.error(f"Error in WebSocket loop: {e}")
                 break
         
-        # Cancel output task
+        # Cancel output tasks
         output_task.cancel()
+        text_task.cancel()
         
-        # End the voice stream
-        await stream_manager.send_audio_content_end_event()
-        await stream_manager.send_prompt_end_event()
-        await stream_manager.send_session_end_event()
+        # End the voice stream safely
+        try:
+            if stream_manager.is_active:
+                await stream_manager.send_audio_content_end_event()
+                await stream_manager.send_prompt_end_event()
+                await stream_manager.send_session_end_event()
+        except Exception as cleanup_error:
+            logger.warning(f"Error during stream cleanup: {cleanup_error}")
         
     except Exception as e:
         logger.error(f"WebSocket error: {e}")
     finally:
         # Clean up session
         await voice_manager.end_session(session_id)
-        await websocket.close()
+        
+        # Close WebSocket if not already closed
+        try:
+            if websocket.client_state.name != 'DISCONNECTED':
+                await websocket.close()
+        except Exception as close_error:
+            logger.debug(f"WebSocket already closed: {close_error}")
 
 @router.post("/sessions/{session_id}/audio")
 async def send_audio_chunk(session_id: str, request: AudioChunkRequest) -> Dict[str, str]:

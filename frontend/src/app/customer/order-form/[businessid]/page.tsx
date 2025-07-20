@@ -10,6 +10,7 @@ import { MessageCircle, Menu, Mic, Plus, Minus, ShoppingCart, Trash2, ChevronRig
 import OrderingChatbotTab from '@/components/ordering-chatbot-tab';
 import OrderingMenuTab from '@/components/ordering-menu-tab';
 import OrderingVoiceTab from '@/components/ordering-voice-tab';
+import EnhancedOrderingVoiceTab from '@/components/enhanced-ordering-voice-tab';
 import { useAuthStore } from '@/stores/auth.store';
 import { menuItemsService } from '@/services/menu-items';
 import type { MenuItem } from '@/types/menu-items.types';
@@ -295,10 +296,20 @@ export default function OrderFormPage() {
 
                 {/* Voice Mode */}
                 <TabsContent value="voice" className="h-full">
-                  <OrderingVoiceTab
-                    isListening={isListening}
-                    transcribedText={transcribedText}
-                    toggleVoiceListening={toggleVoiceListening}
+                  <EnhancedOrderingVoiceTab
+                    businessId={businessId}
+                    onError={(error) => {
+                      console.error('Voice ordering error:', error);
+                      // You can add toast notification here
+                    }}
+                    onSessionStart={() => {
+                      console.log('Voice session started');
+                      // You can add analytics tracking here
+                    }}
+                    onSessionEnd={() => {
+                      console.log('Voice session ended');
+                      // You can add cleanup or analytics here
+                    }}
                   />
                 </TabsContent>
               </Tabs>

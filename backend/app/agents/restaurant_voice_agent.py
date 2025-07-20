@@ -21,16 +21,75 @@ import time
 import inspect
 from typing import Dict, List, Optional, Any
 from decimal import Decimal
+# Load environment variables with explicit path
+try:
+    from dotenv import load_dotenv
+    import pathlib
+    
+    # Try to find .env file in current directory or parent directories
+    current_dir = pathlib.Path(__file__).parent
+    env_file = None
+    
+    # Check current directory and up to 3 parent directories
+    for i in range(4):
+        potential_env = current_dir / '.env'
+        if potential_env.exists():
+            env_file = potential_env
+            break
+        current_dir = current_dir.parent
+    
+    if env_file:
+        load_dotenv(env_file)
+        print(f"Loaded .env from: {env_file}")
+    else:
+        # Try the default
+        load_dotenv()
+        print("Loaded .env from default location")
+    
+    # If still no credentials, try to load from known .env location
+    if not os.getenv('AWS_ACCESS_KEY_ID'):
+        backend_env = pathlib.Path(__file__).parent.parent.parent / '.env'
+        if backend_env.exists():
+            load_dotenv(backend_env, override=True)
+            print(f"Loaded .env from: {backend_env}")
+        
+except ImportError:
+    # If dotenv is not available, try to load from os.environ
+    print("dotenv not available, using system environment")
+    pass
 
 try:
     from aws_sdk_bedrock_runtime.client import BedrockRuntimeClient, InvokeModelWithBidirectionalStreamOperationInput
     from aws_sdk_bedrock_runtime.models import InvokeModelWithBidirectionalStreamInputChunk, BidirectionalInputPayloadPart
     from aws_sdk_bedrock_runtime.config import Config, HTTPAuthSchemeResolver, SigV4AuthScheme
     from smithy_aws_core.credentials_resolvers.environment import EnvironmentCredentialsResolver
+    AWS_SDK_AVAILABLE = True
 except ImportError as e:
     print(f"Missing required AWS SDK: {e}")
     print("Install with: pip install aws-sdk-bedrock-runtime")
-    exit(1)
+    AWS_SDK_AVAILABLE = False
+    
+    # Create mock classes to prevent import errors
+    class BedrockRuntimeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+    
+    class InvokeModelWithBidirectionalStreamOperationInput:
+        def __init__(self, *args, **kwargs):
+            pass
+    
+    class Config:
+        def __init__(self, *args, **kwargs):
+            pass
+    
+    class HTTPAuthSchemeResolver:
+        pass
+    
+    class SigV4AuthScheme:
+        pass
+    
+    class EnvironmentCredentialsResolver:
+        pass
 
 # Import your existing restaurant logic
 try:
@@ -589,6 +648,18 @@ class RestaurantStreamManager:
 
     def _initialize_client(self):
         """Initialize the Bedrock client."""
+        # Check if AWS SDK is available
+        if not AWS_SDK_AVAILABLE:
+            raise ValueError("AWS SDK for Bedrock Runtime is not installed. Install with: pip install aws-sdk-bedrock-runtime")
+        
+        # Check if AWS credentials are available
+        aws_access_key = os.getenv('AWS_ACCESS_KEY_ID')
+        aws_secret_key = os.getenv('AWS_SECRET_ACCESS_KEY')
+        
+        
+        if not aws_access_key or not aws_secret_key:
+            raise ValueError("AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are required")
+        
         config = Config(
             endpoint_uri=f"https://bedrock-runtime.{self.region}.amazonaws.com",
             region=self.region,
@@ -877,8 +948,16 @@ class RestaurantStreamManager:
         except Exception as e:
             debug_print(f"Error sending event: {str(e)}")
             debug_print(f"Exception type: {type(e)}")
+            
+            # Handle specific AWS stream errors
+            if "No open content found" in str(e) or "content name" in str(e).lower():
+                debug_print("AWS stream content already ended - marking stream inactive")
+                self.is_active = False
+                return
+            
             if "parse" in str(e).lower():
                 debug_print(f"Parse error on event: {event_json[:200]}...")
+            
             if DEBUG:
                 import traceback
                 traceback.print_exc()
@@ -890,6 +969,9 @@ class RestaurantStreamManager:
     
     async def _process_audio_input(self):
         """Process audio input from the queue and send to Bedrock."""
+        audio_content_active = False
+        last_audio_time = None
+        
         while self.is_active:
             try:
                 data = await self.audio_input_queue.get()
@@ -911,6 +993,12 @@ class RestaurantStreamManager:
                 
                 debug_print(f"Processing audio chunk: {len(audio_bytes)} bytes")
                 
+                # Start audio content if not already started
+                if not audio_content_active:
+                    debug_print("Starting audio content")
+                    await self.send_audio_content_start_event()
+                    audio_content_active = True
+                
                 blob = base64.b64encode(audio_bytes)
                 audio_event = self.AUDIO_EVENT_TEMPLATE % (
                     self.prompt_name, 
@@ -921,6 +1009,10 @@ class RestaurantStreamManager:
                 debug_print(f"Sending audio event with {len(blob)} encoded bytes")
                 await self.send_raw_event(audio_event)
                 
+                # Update last audio time
+                import time
+                last_audio_time = time.time()
+                
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -928,6 +1020,7 @@ class RestaurantStreamManager:
                 if DEBUG:
                     import traceback
                     traceback.print_exc()
+    
     
     def add_audio_chunk(self, audio_bytes):
         """Add an audio chunk to the queue."""
@@ -1014,6 +1107,12 @@ class RestaurantStreamManager:
 
                     if (self.role == "ASSISTANT" and self.display_assistant_text):
                         print(f"Assistant: {text_content}")
+                        # Also send text response to output queue for WebSocket forwarding
+                        await self.output_queue.put({
+                            "type": "text_output",
+                            "content": text_content,
+                            "role": "assistant"
+                        })
                     elif (self.role == "USER"):
                         print(f"User: {text_content}")
                         self.last_interaction_time = time.time()
@@ -1153,12 +1252,19 @@ class RestaurantStreamManager:
         if self.response_task and not self.response_task.done():
             self.response_task.cancel()
 
-        await self.send_audio_content_end_event()
-        await self.send_prompt_end_event()
-        await self.send_session_end_event()
+        try:
+            await self.send_audio_content_end_event()
+            await self.send_prompt_end_event()
+            await self.send_session_end_event()
+        except Exception as e:
+            debug_print(f"Error during stream end events: {e}")
+            self.is_active = False
 
         if self.stream_response:
-            await self.stream_response.input_stream.close()
+            try:
+                await self.stream_response.input_stream.close()
+            except Exception as e:
+                debug_print(f"Error closing stream input: {e}")
 
 class AudioStreamer:
     """Handles continuous microphone input and audio output using separate streams."""
