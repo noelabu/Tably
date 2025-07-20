@@ -10,8 +10,15 @@ session = boto3.Session(
     region_name='us-east-1'
 )
 
-# Create a Bedrock model with the custom session
+# Create Bedrock models with the custom session
 bedrock_model = BedrockModel(
     model_id="amazon.nova-lite-v1:0",
     boto_session=session
+)
+
+# Nova Sonic model for voice applications
+nova_sonic_model = BedrockModel(
+    model_id="amazon.nova-sonic-v1:0",
+    boto_session=session,
+    stream=False  # Disable streaming for Nova Sonic compatibility
 )
