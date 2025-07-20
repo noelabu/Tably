@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     AWS_SECRET_ACCESS_KEY: str
     AWS_REGION: str = "us-east-1"
     
+    # Daily.co settings for voice streaming
+    DAILY_API_KEY: str = ""
+    DAILY_API_URL: Optional[str] = "https://api.daily.co/v1"
+    
     # Application settings
     DEBUG: bool = True
     LOG_LEVEL: str = "INFO"

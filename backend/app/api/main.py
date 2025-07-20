@@ -8,7 +8,10 @@ from app.api.endpoints import (
     ordering_agents,
     orders,
     customer_preferences,
-    order_tracking
+    order_tracking,
+    voice_ordering,
+    simple_voice_ordering,
+    restaurant_voice_ordering
 )
 api_router = APIRouter()
 
@@ -23,3 +26,6 @@ api_router.include_router(ordering_agents.router, prefix="/ordering", tags=["ord
 api_router.include_router(orders.router, prefix="/orders", tags=["orders"])
 api_router.include_router(customer_preferences.router, prefix="/customer", tags=["customer-preferences"])
 api_router.include_router(order_tracking.router, prefix="/tracking", tags=["order-tracking"])
+api_router.include_router(voice_ordering.router, tags=["voice-ordering"])
+api_router.include_router(simple_voice_ordering.router, tags=["simple-voice-ordering"])
+api_router.include_router(restaurant_voice_ordering.router, tags=["restaurant-voice-ordering"])

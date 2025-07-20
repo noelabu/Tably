@@ -1,8 +1,16 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import logging
+import os
 from app.api.main import api_router
 from app.core.config import Settings
+
+# Ensure environment variables are loaded from .env file
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 def create_app(
     settings: Settings | None = None,
