@@ -23,3 +23,10 @@ bedrock_model = BedrockModel(
     model_id="amazon.nova-lite-v1:0",
     boto_session=session
 )
+
+# Nova Sonic model for voice applications
+nova_sonic_model = BedrockModel(
+    model_id="amazon.nova-sonic-v1:0",
+    boto_session=session,
+    stream=False  # Disable streaming for Nova Sonic compatibility
+)
