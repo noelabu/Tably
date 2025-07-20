@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
@@ -23,85 +23,54 @@ import {
   Bot,
   Send as SendIcon,
   User,
-  LogOut
+  LogOut,
+  Loader2
 } from 'lucide-react'
+import { useAuth } from '@/hooks/use-auth'
+import { useAuthStore } from '@/stores/auth.store'
+import { OrderingChatService, ChatMessage } from '@/services/ordering-chat'
+import OrderingChatbotTab from './ordering-chatbot-tab';
+import OrderingMenuTab from './ordering-menu-tab';
+import OrderingVoiceTab from './ordering-voice-tab';
+import { menuItemsService } from '@/services/menu-items';
+import type { MenuItem } from '@/types/menu-items.types';
+import { OrderParser } from '@/services/order-parser';
 
 interface OrderingSystemProps {
   onLogout?: () => void
 }
 
-interface MenuItem {
-  id: string
-  name: string
-  description: string
-  price: number
-  category: string
-  image?: string
-  rating?: number
-  prepTime?: number
-  popular?: boolean
-}
+// Remove the local MenuItem interface definition
+// interface MenuItem {
+//   id: string
+//   name: string
+//   description: string
+//   price: number
+//   category: string
+//   image?: string
+//   rating?: number
+//   prepTime?: number
+//   popular?: boolean
+// }
 
-interface CartItem extends MenuItem {
-  quantity: number
-  customizations?: string[]
-}
+// Remove the local CartItem interface and use the imported MenuItem type with an added quantity field
 
-const menuItems: MenuItem[] = [
-  {
-    id: '1',
-    name: 'Classic Burger',
-    description: 'Beef patty, lettuce, tomato, onion, pickles, special sauce',
-    price: 12.99,
-    category: 'Burgers',
-    rating: 4.5,
-    prepTime: 15,
-    popular: true
-  },
-  {
-    id: '2',
-    name: 'Margherita Pizza',
-    description: 'Fresh mozzarella, tomato sauce, basil, olive oil',
-    price: 18.99,
-    category: 'Pizza',
-    rating: 4.7,
-    prepTime: 20
-  },
-  {
-    id: '3',
-    name: 'Caesar Salad',
-    description: 'Romaine lettuce, croutons, parmesan, caesar dressing',
-    price: 9.99,
-    category: 'Salads',
-    rating: 4.3,
-    prepTime: 8
-  },
-  {
-    id: '4',
-    name: 'Chicken Wings',
-    description: 'Buffalo sauce, celery sticks, blue cheese dip',
-    price: 14.99,
-    category: 'Appetizers',
-    rating: 4.6,
-    prepTime: 12,
-    popular: true
-  }
-]
-
-const categories = ['All', 'Burgers', 'Pizza', 'Salads', 'Appetizers', 'Drinks', 'Desserts']
+type CartItem = MenuItem & { quantity: number; customizations?: string[] };
 
 const suggestedResponses = [
   "I'd like to see the burger menu",
   "What are your most popular items?",
   "Do you have any vegetarian options?",
-  "What's the total for my order?"
+  "Add a pizza to my order",
+  "I want to add 2 burgers to my cart"
 ]
 
 export default function OrderingSystem({ onLogout }: OrderingSystemProps) {
+  const { user } = useAuth()
   const [activeMode, setActiveMode] = useState('chatbot')
   const [selectedCategory, setSelectedCategory] = useState('All')
   const [cartItems, setCartItems] = useState<CartItem[]>([])
-  const [chatMessages, setChatMessages] = useState([
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
     {
       id: '1',
       type: 'bot',
@@ -112,17 +81,66 @@ export default function OrderingSystem({ onLogout }: OrderingSystemProps) {
   const [inputMessage, setInputMessage] = useState('')
   const [isListening, setIsListening] = useState(false)
   const [transcribedText, setTranscribedText] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
+  const [chatService, setChatService] = useState<OrderingChatService | null>(null)
+  const [useStreaming, setUseStreaming] = useState(false)
 
-  const addToCart = (item: MenuItem) => {
+  // Initialize chat service when user is available
+  useEffect(() => {
+    if (user) {
+      // Get the token from the auth store
+      const authStore = useAuthStore.getState()
+      const token = authStore.tokens?.access_token
+      if (token) {
+        setChatService(new OrderingChatService(token))
+      }
+    }
+  }, [user])
+
+  // New state for menu items and categories
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [categories, setCategories] = useState<string[]>(['All']);
+  const [loadingMenu, setLoadingMenu] = useState(false);
+  const [menuError, setMenuError] = useState<string | null>(null);
+
+  const businessId = '5f5234da-631e-4196-b9d0-fab5901d483d';
+  const token = useAuthStore((state) => state.tokens?.access_token || '');
+
+  useEffect(() => {
+    async function fetchMenu() {
+      setLoadingMenu(true);
+      setMenuError(null);
+      try {
+        const response = await menuItemsService.getMenuItemsByBusiness(token, businessId);
+        setMenuItems(response.items);
+        // Extract unique categories from menu items
+        const uniqueCategories = Array.from(
+          new Set(
+            response.items
+              .map((item) => item.category)
+              .filter((cat): cat is string => !!cat && cat.trim() !== '')
+          )
+        );
+        setCategories(['All', ...uniqueCategories]);
+      } catch (err) {
+        setMenuError('Failed to load menu items.');
+      } finally {
+        setLoadingMenu(false);
+      }
+    }
+    fetchMenu();
+  }, [token, businessId]);
+
+  const addToCart = (item: MenuItem, quantity: number = 1) => {
     const existingItem = cartItems.find(cartItem => cartItem.id === item.id)
     if (existingItem) {
       setCartItems(cartItems.map(cartItem => 
         cartItem.id === item.id 
-          ? { ...cartItem, quantity: cartItem.quantity + 1 }
+          ? { ...cartItem, quantity: cartItem.quantity + quantity }
           : cartItem
       ))
     } else {
-      setCartItems([...cartItems, { ...item, quantity: 1 }])
+      setCartItems([...cartItems, { ...item, quantity }])
     }
   }
 
@@ -140,29 +158,166 @@ export default function OrderingSystem({ onLogout }: OrderingSystemProps) {
     setCartItems(cartItems.filter(item => item.id !== id))
   }
 
-  const sendMessage = () => {
-    if (!inputMessage.trim()) return
+  const sendMessage = async () => {
+    if (!inputMessage.trim() || isLoading) return
     
-    const newMessage = {
+    const newMessage: ChatMessage = {
       id: Date.now().toString(),
       type: 'user',
       content: inputMessage,
       timestamp: new Date()
     }
     
-    setChatMessages([...chatMessages, newMessage])
+    setChatMessages(prev => [...prev, newMessage])
+    const currentMessage = inputMessage
     setInputMessage('')
+    setIsLoading(true)
     
-    // Simulate bot response
-    setTimeout(() => {
-      const botResponse = {
+    try {
+      // Only use orchestrator for customers
+      if (user?.role === 'customer' && chatService) {
+        // Build context from recent messages and cart
+        const context = buildChatContext()
+        
+        if (useStreaming) {
+          // Handle streaming response
+          const botMessage: ChatMessage = {
+            id: (Date.now() + 1).toString(),
+            type: 'bot',
+            content: '',
+            timestamp: new Date()
+          }
+          setChatMessages(prev => [...prev, botMessage])
+          
+          try {
+            let fullResponse = '';
+            for await (const chunk of chatService.streamMessage(currentMessage, context)) {
+              if (chunk.type === 'message') {
+                fullResponse += chunk.content;
+                setChatMessages(prev => 
+                  prev.map(msg => 
+                    msg.id === botMessage.id 
+                      ? { ...msg, content: msg.content + chunk.content }
+                      : msg
+                  )
+                )
+              } else if (chunk.type === 'error') {
+                setChatMessages(prev => 
+                  prev.map(msg => 
+                    msg.id === botMessage.id 
+                      ? { ...msg, content: "Sorry, there was an error processing your request." }
+                      : msg
+                  )
+                )
+                break
+              } else if (chunk.type === 'done') {
+                // Parse the complete response for order items
+                try {
+                  const parseResult = OrderParser.parseOrderFromResponse(fullResponse);
+                  
+                  if (parseResult.success && parseResult.items.length > 0) {
+                    const { matched, unmatched } = OrderParser.findMatchingMenuItems(parseResult.items, menuItems);
+                    
+                    // Add matched items to cart with their parsed quantities
+                    parseResult.items.forEach((parsedItem, index) => {
+                      if (index < matched.length) {
+                        addToCart(matched[index], parsedItem.quantity);
+                      }
+                    });
+                    
+                    // Log unmatched items for debugging
+                    if (unmatched.length > 0) {
+                      console.log('Unmatched items:', unmatched);
+                    }
+                  }
+                } catch (error) {
+                  console.error('Error parsing order from streaming response:', error);
+                }
+                break
+              }
+            }
+          } catch (error) {
+            setChatMessages(prev => 
+              prev.map(msg => 
+                msg.id === botMessage.id 
+                  ? { ...msg, content: "Sorry, there was an error processing your request." }
+                  : msg
+              )
+            )
+          }
+        } else {
+          // Handle non-streaming response
+          const response = await chatService.sendMessage(currentMessage, context)
+          const botResponse: ChatMessage = {
+            id: (Date.now() + 1).toString(),
+            type: 'bot',
+            content: response.response,
+            timestamp: new Date()
+          }
+          setChatMessages(prev => [...prev, botResponse])
+          
+          // Parse the response for order items and add to cart
+          try {
+            const parseResult = OrderParser.parseOrderFromResponse(response.response);
+            console.log('Parsed result:', parseResult); // Debug log
+            
+            if (parseResult.success && parseResult.items.length > 0) {
+              const { matched, unmatched } = OrderParser.findMatchingMenuItems(parseResult.items, menuItems);
+              console.log('Matched items:', matched); // Debug log
+              
+              // Add matched items to cart with their parsed quantities
+              parseResult.items.forEach((parsedItem, index) => {
+                if (index < matched.length) {
+                  console.log(`Adding ${parsedItem.quantity} of ${matched[index].name}`); // Debug log
+                  addToCart(matched[index], parsedItem.quantity);
+                }
+              });
+              
+              // Log unmatched items for debugging
+              if (unmatched.length > 0) {
+                console.log('Unmatched items:', unmatched);
+              }
+            }
+          } catch (error) {
+            console.error('Error parsing order from response:', error);
+          }
+        }
+      } else {
+        // Fallback for non-customers or when service not available
+        setTimeout(() => {
+          const botResponse: ChatMessage = {
+            id: (Date.now() + 1).toString(),
+            type: 'bot',
+            content: "I'd be happy to help! Let me check our menu for you.",
+            timestamp: new Date()
+          }
+          setChatMessages(prev => [...prev, botResponse])
+        }, 1000)
+      }
+    } catch (error) {
+      console.error('Error sending message:', error)
+      const errorResponse: ChatMessage = {
         id: (Date.now() + 1).toString(),
         type: 'bot',
-        content: "I'd be happy to help! Let me check our menu for you.",
+        content: "Sorry, there was an error processing your request. Please try again.",
         timestamp: new Date()
       }
-      setChatMessages(prev => [...prev, botResponse])
-    }, 1000)
+      setChatMessages(prev => [...prev, errorResponse])
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const buildChatContext = (): string => {
+    const recentMessages = chatMessages.slice(-5).map(msg => 
+      `${msg.type}: ${msg.content}`
+    ).join('\n')
+    
+    const cartContext = cartItems.length > 0 
+      ? `Current cart: ${cartItems.map(item => `${item.name} x${item.quantity}`).join(', ')}`
+      : 'Cart is empty'
+    
+    return `Recent conversation:\n${recentMessages}\n\n${cartContext}`
   }
 
   const handleSuggestedResponse = (response: string) => {
@@ -187,8 +342,8 @@ export default function OrderingSystem({ onLogout }: OrderingSystemProps) {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="bg-card border-b px-6 py-4 sticky top-0 z-10">
+      {/* Section Header (not sticky) */}
+      <section className="bg-card border-b px-6 py-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Bella Vista Italiana</h1>
@@ -214,7 +369,7 @@ export default function OrderingSystem({ onLogout }: OrderingSystemProps) {
             )}
           </div>
         </div>
-      </header>
+      </section>
 
       <div className="flex h-screen">
         {/* Main Content */}
@@ -247,6 +402,17 @@ export default function OrderingSystem({ onLogout }: OrderingSystemProps) {
               {/* Chatbot Mode */}
               <TabsContent value="chatbot" className="h-full flex flex-col">
                 <div className="flex-1 flex flex-col space-y-4">
+                  {/* AI Assistant Status */}
+                  {user?.role === 'customer' && chatService && (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/50 rounded-lg p-2">
+                      <Bot className="w-4 h-4" />
+                      AI Ordering Assistant Active
+                      <Badge variant="secondary" className="ml-auto">
+                        {useStreaming ? 'Streaming' : 'Standard'}
+                      </Badge>
+                    </div>
+                  )}
+                  
                   {/* Chat Messages */}
                   <ScrollArea className="flex-1 bg-muted rounded-lg p-4">
                     <div className="space-y-4">
@@ -289,152 +455,52 @@ export default function OrderingSystem({ onLogout }: OrderingSystemProps) {
                     <Input
                       value={inputMessage}
                       onChange={(e) => setInputMessage(e.target.value)}
-                      placeholder="Type your message..."
-                      onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+                      placeholder={isLoading ? "Waiting for response..." : "Type your message..."}
+                      onKeyPress={(e) => e.key === 'Enter' && !isLoading && sendMessage()}
+                      disabled={isLoading}
                       className="flex-1"
                     />
-                    <Button onClick={sendMessage} className="bg-primary hover:bg-primary/90">
-                      <SendIcon className="w-4 h-4" />
+                    <Button 
+                      onClick={sendMessage} 
+                      disabled={isLoading || !inputMessage.trim()}
+                      className="bg-primary hover:bg-primary/90"
+                    >
+                      {isLoading ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <SendIcon className="w-4 h-4" />
+                      )}
                     </Button>
                   </div>
                 </div>
+                <OrderingChatbotTab
+                  chatMessages={chatMessages}
+                  inputMessage={inputMessage}
+                  onInputChange={(e) => setInputMessage(e.target.value)}
+                  onSendMessage={sendMessage}
+                  onSuggestedResponse={handleSuggestedResponse}
+                  suggestedResponses={suggestedResponses}
+                />
               </TabsContent>
 
               {/* Menu Mode */}
               <TabsContent value="menu" className="h-full">
-                <div className="h-full flex flex-col space-y-4">
-                  {/* Category Filter */}
-                  <div className="flex flex-wrap gap-2">
-                    {categories.map((category) => (
-                      <Button
-                        key={category}
-                        variant={selectedCategory === category ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => setSelectedCategory(category)}
-                        className={selectedCategory === category ? "bg-primary hover:bg-primary/90" : ""}
-                      >
-                        {category}
-                      </Button>
-                    ))}
-                  </div>
-
-                  {/* Menu Items */}
-                  <ScrollArea className="flex-1">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {filteredItems.map((item) => (
-                        <Card key={item.id} className="bg-card">
-                          <CardHeader className="pb-3">
-                            <div className="flex items-start justify-between">
-                              <div>
-                                <CardTitle className="text-lg flex items-center gap-2">
-                                  {item.name}
-                                  {item.popular && (
-                                    <Badge className="bg-primary text-primary-foreground">
-                                      Popular
-                                    </Badge>
-                                  )}
-                                </CardTitle>
-                                <p className="text-muted-foreground text-sm mt-1">
-                                  {item.description}
-                                </p>
-                              </div>
-                              <div className="text-right">
-                                <div className="text-xl font-semibold text-foreground">
-                                  ${item.price}
-                                </div>
-                              </div>
-                            </div>
-                          </CardHeader>
-                          <CardContent className="pt-0">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                                {item.rating && (
-                                  <div className="flex items-center gap-1">
-                                    <Star className="w-4 h-4 fill-current text-yellow-400" />
-                                    {item.rating}
-                                  </div>
-                                )}
-                                {item.prepTime && (
-                                  <div className="flex items-center gap-1">
-                                    <Clock className="w-4 h-4" />
-                                    {item.prepTime}m
-                                  </div>
-                                )}
-                                <div className="flex items-center gap-1">
-                                  <ChefHat className="w-4 h-4" />
-                                  {item.category}
-                                </div>
-                              </div>
-                              <Button 
-                                onClick={() => addToCart(item)}
-                                className="bg-primary hover:bg-primary/90"
-                              >
-                                <Plus className="w-4 h-4 mr-1" />
-                                Add
-                              </Button>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      ))}
-                    </div>
-                  </ScrollArea>
-                </div>
+                <OrderingMenuTab
+                  categories={categories}
+                  selectedCategory={selectedCategory}
+                  setSelectedCategory={setSelectedCategory}
+                  filteredItems={filteredItems}
+                  addToCart={addToCart}
+                />
               </TabsContent>
 
               {/* Voice Mode */}
               <TabsContent value="voice" className="h-full">
-                <div className="h-full flex flex-col items-center justify-center space-y-8">
-                  <div className="text-center space-y-4">
-                    <h2 className="text-2xl font-semibold text-foreground">Voice Ordering</h2>
-                    <p className="text-muted-foreground">
-                      Tap the microphone and tell us what you'd like to order
-                    </p>
-                  </div>
-
-                  {/* Microphone Button */}
-                  <Button
-                    onClick={toggleVoiceListening}
-                    className={`w-32 h-32 rounded-full ${
-                      isListening 
-                        ? 'bg-red-500 hover:bg-red-600 animate-pulse' 
-                        : 'bg-primary hover:bg-primary/90'
-                    }`}
-                  >
-                    <Mic className="w-12 h-12" />
-                  </Button>
-
-                  {/* Status and Transcription */}
-                  <div className="text-center space-y-4 max-w-md">
-                    <div className="text-lg font-medium text-foreground">
-                      {isListening ? 'Listening...' : 'Tap to speak'}
-                    </div>
-                    
-                    {transcribedText && (
-                      <Card className="bg-muted">
-                        <CardContent className="p-4">
-                          <div className="text-sm text-muted-foreground mb-2">Transcribed:</div>
-                          <div className="text-foreground">{transcribedText}</div>
-                        </CardContent>
-                      </Card>
-                    )}
-
-                    {/* Waveform Visualization */}
-                    {isListening && (
-                      <div className="flex items-center justify-center space-x-1 h-8">
-                        {[...Array(5)].map((_, i) => (
-                          <div
-                            key={i}
-                            className="w-1 bg-primary rounded-full animate-pulse"
-                            style={{
-                              height: `${20 + Math.random() * 20}px`,
-                              animationDelay: `${i * 0.1}s`
-                            }}
-                          />
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
+                <OrderingVoiceTab
+                  isListening={isListening}
+                  transcribedText={transcribedText}
+                  toggleVoiceListening={toggleVoiceListening}
+                />
               </TabsContent>
             </Tabs>
           </div>

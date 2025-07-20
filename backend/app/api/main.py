@@ -1,10 +1,31 @@
-from app.api.endpoints import auth
 from fastapi import APIRouter
-
+from app.api.endpoints import (
+    business,
+    auth, 
+    menu_items, 
+    menu_image_analysis, 
+    menu_agent, 
+    ordering_agents,
+    orders,
+    customer_preferences,
+    order_tracking,
+    voice_ordering,
+    simple_voice_ordering,
+    restaurant_voice_ordering
+)
 api_router = APIRouter()
 
-# Import and include routers from endpoints
-from app.api.endpoints import auth
-
-# Include the linecoach router with a prefix
+# Include routers with prefixes
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
+api_router.include_router(business.router, prefix="/business", tags=["business"])
+api_router.include_router(menu_items.router, prefix="/menu-items", tags=["menu-items"])
+api_router.include_router(orders.router, prefix="/orders", tags=["orders"])
+api_router.include_router(menu_image_analysis.router, prefix="/menu-image-analysis", tags=["menu-image-analysis"])
+api_router.include_router(menu_agent.router, prefix="/menu-agent", tags=["menu-agent"])
+api_router.include_router(ordering_agents.router, prefix="/ordering", tags=["ordering"])
+api_router.include_router(orders.router, prefix="/orders", tags=["orders"])
+api_router.include_router(customer_preferences.router, prefix="/customer", tags=["customer-preferences"])
+api_router.include_router(order_tracking.router, prefix="/tracking", tags=["order-tracking"])
+api_router.include_router(voice_ordering.router, tags=["voice-ordering"])
+api_router.include_router(simple_voice_ordering.router, tags=["simple-voice-ordering"])
+api_router.include_router(restaurant_voice_ordering.router, tags=["restaurant-voice-ordering"])

@@ -21,6 +21,13 @@ class Settings(BaseSettings):
     SUPABASE_URL: str
     SUPABASE_KEY: str
     SUPABASE_ANON_KEY: str
+    AWS_ACCESS_KEY_ID: str
+    AWS_SECRET_ACCESS_KEY: str
+    AWS_REGION: str = "us-east-1"
+    
+    # Daily.co settings for voice streaming
+    DAILY_API_KEY: str = ""
+    DAILY_API_URL: Optional[str] = "https://api.daily.co/v1"
     
     # Application settings
     DEBUG: bool = True
