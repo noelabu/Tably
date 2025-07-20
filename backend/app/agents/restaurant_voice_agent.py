@@ -139,6 +139,8 @@ class RestaurantToolProcessor:
         """Get menu items for the restaurant"""
         try:
             category = params.get("category")
+            debug_print(f"Getting menu items for business {self.business_id}, category: {category}")
+            
             result = await self.menu_db.get_menu_items_by_business(
                 business_id=self.business_id,
                 page=1,
@@ -146,7 +148,10 @@ class RestaurantToolProcessor:
                 available_only=True
             )
             
-            if not result or not result["items"]:
+            debug_print(f"Menu DB result: {result}")
+            
+            if not result or not result.get("items"):
+                debug_print("No menu items found in database")
                 return {"message": "No menu items available right now"}
             
             items = result["items"]
@@ -169,21 +174,29 @@ class RestaurantToolProcessor:
             return {"menu_items": menu_items}
             
         except Exception as e:
+            debug_print(f"Exception in _get_menu_items: {e}")
             return {"error": f"Error getting menu items: {str(e)}"}
     
     async def _search_menu_items(self, params):
         """Search for menu items"""
         try:
-            search_term = params.get("search_term", "")
+            search_term = params.get("search_term", "").lower()
             if not search_term:
                 return {"error": "Search term is required"}
             
-            items = await self.menu_db.search_menu_items(
-                business_id=self.business_id,
-                search_term=search_term,
-                available_only=True,
-                limit=10
-            )
+            debug_print(f"Searching for: {search_term}")
+            
+            try:
+                items = await self.menu_db.search_menu_items(
+                    business_id=self.business_id,
+                    search_term=search_term,
+                    available_only=True,
+                    limit=10
+                )
+            except Exception as db_error:
+                debug_print(f"Database search failed: {db_error}")
+                items = []
+            
             
             if not items:
                 return {"message": f"No items found matching '{search_term}'"}
@@ -194,12 +207,13 @@ class RestaurantToolProcessor:
                     "name": item["name"],
                     "price": float(item["price"]),
                     "description": item.get("description", ""),
-                    "id": item["id"]
+                    "id": item.get("id", "sample")
                 })
             
             return {"found_items": found_items}
             
         except Exception as e:
+            debug_print(f"Exception in _search_menu_items: {e}")
             return {"error": f"Error searching menu: {str(e)}"}
     
     async def _add_item_to_order(self, params):
@@ -568,6 +582,10 @@ class RestaurantStreamManager:
         
         # Add tracking for in-progress tool calls
         self.pending_tool_tasks = {}
+        
+        # Conversation management
+        self.last_interaction_time = None
+        self.idle_timeout = 30  # 30 seconds of silence before prompting
 
     def _initialize_client(self):
         """Initialize the Bedrock client."""
@@ -778,6 +796,14 @@ class RestaurantStreamManager:
             restaurant_system_prompt = f"""You are a friendly, efficient voice ordering assistant for a restaurant (Business ID: {self.business_id}). 
             Your goal is to help customers place orders through natural conversation.
 
+            IMPORTANT CONVERSATION RULES:
+            - Start with a brief greeting and ask how you can help
+            - After each response, WAIT for the customer to respond
+            - Keep responses SHORT (1-2 sentences max)
+            - Ask ONE question at a time
+            - Don't ramble or give long explanations
+            - If customer is silent for more than 10 seconds, ask if they need help
+
             Key responsibilities:
             1. Greet customers warmly and ask how you can help
             2. Present menu items clearly when asked
@@ -788,13 +814,11 @@ class RestaurantStreamManager:
             7. Be conversational and helpful
 
             Guidelines:
-            - Speak naturally and conversationally
+            - Speak naturally but CONCISELY
             - Ask clarifying questions when items are ambiguous
             - Suggest popular items or categories when customers seem unsure
             - Always confirm quantities and special instructions
-            - Be patient with changes to the order
-            - Provide clear pricing information
-            - Keep responses concise but friendly
+            - Keep responses SHORT and to the point
             - When reading order numbers, read each digit individually with pauses
 
             Use the available tools to access menu items, manage orders, and complete transactions.
@@ -992,6 +1016,7 @@ class RestaurantStreamManager:
                         print(f"Assistant: {text_content}")
                     elif (self.role == "USER"):
                         print(f"User: {text_content}")
+                        self.last_interaction_time = time.time()
                 elif 'audioOutput' in json_data['event']:
                     audio_content = json_data['event']['audioOutput']['content']
                     audio_bytes = base64.b64decode(audio_content)
