@@ -173,6 +173,10 @@ const EnhancedOrderingVoiceTab: React.FC<EnhancedOrderingVoiceTabProps> = ({
             console.log('Received pong');
             break;
             
+          case 'heartbeat':
+            console.log('Received heartbeat');
+            break;
+            
           default:
             console.log('Unknown message type:', data.type);
         }
@@ -574,6 +578,7 @@ const EnhancedOrderingVoiceTab: React.FC<EnhancedOrderingVoiceTabProps> = ({
               🔊 Playing Response
             </Badge>
           )}
+          
         </div>
       </div>
 
@@ -660,6 +665,7 @@ const EnhancedOrderingVoiceTab: React.FC<EnhancedOrderingVoiceTabProps> = ({
                 {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
                 <span>{isMuted ? 'Unmute' : 'Mute'}</span>
               </Button>
+
 
               {isPlaying && (
                 <Button

@@ -113,7 +113,7 @@ FORMAT = pyaudio.paInt16
 CHUNK_SIZE = 1024
 
 # Debug mode flag
-DEBUG = False
+DEBUG = True
 
 def debug_print(message):
     """Print only if debug mode is enabled"""
@@ -687,18 +687,25 @@ class RestaurantStreamManager:
 
     def _initialize_client(self):
         """Initialize the Bedrock client."""
+        debug_print("Checking AWS SDK availability")
         # Check if AWS SDK is available
         if not AWS_SDK_AVAILABLE:
+            debug_print("AWS SDK not available")
             raise ValueError("AWS SDK for Bedrock Runtime is not installed. Install with: pip install aws-sdk-bedrock-runtime")
         
+        debug_print("AWS SDK available, checking credentials")
         # Check if AWS credentials are available
         aws_access_key = os.getenv('AWS_ACCESS_KEY_ID')
         aws_secret_key = os.getenv('AWS_SECRET_ACCESS_KEY')
         
+        debug_print(f"AWS_ACCESS_KEY_ID: {'***' if aws_access_key else 'NOT SET'}")
+        debug_print(f"AWS_SECRET_ACCESS_KEY: {'***' if aws_secret_key else 'NOT SET'}")
         
         if not aws_access_key or not aws_secret_key:
+            debug_print("Missing AWS credentials")
             raise ValueError("AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are required")
         
+        debug_print(f"Creating Bedrock client config for region: {self.region}")
         config = Config(
             endpoint_uri=f"https://bedrock-runtime.{self.region}.amazonaws.com",
             region=self.region,
@@ -706,7 +713,9 @@ class RestaurantStreamManager:
             http_auth_scheme_resolver=HTTPAuthSchemeResolver(),
             http_auth_schemes={"aws.auth#sigv4": SigV4AuthScheme()}
         )
+        debug_print("Creating BedrockRuntimeClient")
         self.bedrock_client = BedrockRuntimeClient(config=config)
+        debug_print("Bedrock client created successfully")
     
     def start_prompt(self):
         """Create a promptStart event with restaurant tools"""
@@ -895,70 +904,26 @@ class RestaurantStreamManager:
     
     async def initialize_stream(self):
         """Initialize the bidirectional stream with Bedrock."""
+        debug_print("Starting stream initialization")
         if not self.bedrock_client:
+            debug_print("Initializing Bedrock client")
             self._initialize_client()
         
         try:
+            debug_print("Calling Bedrock invoke_model_with_bidirectional_stream")
             self.stream_response = await time_it_async("invoke_model_with_bidirectional_stream", lambda: self.bedrock_client.invoke_model_with_bidirectional_stream(InvokeModelWithBidirectionalStreamOperationInput(model_id=self.model_id)))
             self.is_active = True
+            debug_print("Stream response created, setting is_active = True")
             
-            # Restaurant-specific system prompt 
-            restaurant_system_prompt = f"""You are a friendly, efficient voice ordering assistant and expert menu consultant for a restaurant (Business ID: {self.business_id}). 
-            Your goal is to help customers place orders through natural conversation while providing excellent recommendations and maximizing order value.
+            # Restaurant-specific system prompt - Simplified for better responsiveness
+            restaurant_system_prompt = """You are a friendly voice ordering assistant for a restaurant. 
 
-            IMPORTANT CONVERSATION RULES:
-            - Start with a brief greeting and ask how you can help
-            - After each response, WAIT for the customer to respond
-            - Keep responses SHORT (1-2 sentences max)
-            - Ask ONE question at a time
-            - Don't ramble or give long explanations
-            - If customer is silent for more than 10 seconds, ask if they need help
+            IMPORTANT: As soon as you receive any input from a customer (even just "Hi there!"), immediately respond with: 
+            "Hi! Welcome to our restaurant. How can I help you today?"
 
-            CRITICAL MENU RESTRICTION:
-            - ONLY recommend items that are actually available in the menu
-            - You MUST use the getMenuItemsTool or searchMenuItemsTool before making ANY recommendations
-            - NEVER suggest items that you haven't confirmed are on the menu
-            - If a customer asks for something not on the menu, politely explain it's not available and suggest similar items from the actual menu
+            Keep all responses SHORT and conversational. Use the available tools to help customers order menu items.
 
-            DIETARY CONSTRAINTS & ALLERGEN SAFETY:
-            - ALWAYS ask about dietary restrictions, allergies, or food preferences early in the conversation
-            - Respect all dietary constraints (vegetarian, vegan, gluten-free, keto, etc.)
-            - Never recommend items that conflict with stated allergen restrictions
-            - When in doubt about ingredients or allergens, acknowledge limitations and suggest the customer speak with restaurant staff
-            - Proactively mention common allergens when relevant (nuts, dairy, gluten, shellfish, etc.)
-
-            EXPERT RECOMMENDATIONS & UPSELLING:
-            - Act as a knowledgeable menu expert who knows which items pair well together
-            - Suggest appetizers, sides, or beverages that complement the main order
-            - Recommend higher-value items when appropriate (e.g., premium versions, combos, meal deals)
-            - Suggest popular or signature items when customers seem undecided
-            - Offer desserts or beverages to complete the meal
-            - Use phrases like "our chef recommends," "popular choice," or "pairs perfectly with"
-            - Suggest portion upgrades or add-ons that enhance the dining experience
-
-            Your responsibilities include:
-            1. **Order Taking**: Help customers select menu items, specify quantities, and customize orders (ONLY from menu)
-            2. **Cart Management**: When customers want to add items to their order, confirm the addition clearly (ONLY menu items)
-            3. **Order Validation**: Ensure all necessary details are captured (size, modifications, special instructions)
-            4. **Order Summary**: Provide clear summaries of orders before confirmation
-            5. **Customer Service**: Answer questions about orders, modifications, and timing
-            6. **Upselling**: Suggest complementary items or upgrades when appropriate (ONLY from the menu)
-            7. **Problem Resolution**: Handle order changes, cancellations, or issues professionally
-            8. **Dietary Safety**: Always ask about dietary preferences/allergies early in conversation
-            9. **Menu Expertise**: Present menu items clearly and provide expert recommendations based on preferences
-
-            Guidelines:
-            - Speak naturally but CONCISELY
-            - Ask clarifying questions when items are ambiguous
-            - ONLY suggest items you've confirmed are on the menu using the tools
-            - Be proactive in suggesting complementary items and upgrades
-            - Always prioritize dietary safety over upselling
-            - Confirm quantities, special instructions, and dietary accommodations
-            - Keep responses SHORT and to the point
-            - When reading order numbers, read each digit individually with pauses
-
-            Use the available tools to access menu items, manage orders, and complete transactions.
-            When the customer seems ready to order, guide them through the process step by step while looking for opportunities to enhance their meal."""
+            ALWAYS respond immediately to any customer input."""
             
             # Send initialization events
             prompt_event = self.start_prompt()
@@ -1258,7 +1223,14 @@ class RestaurantStreamManager:
                         print(f"Error receiving response: {e}")
                         debug_print(f"Exception type: {type(e)}")
                         debug_print(f"Exception details: {e}")
-                    break
+                    
+                    # Only break on critical errors, continue on recoverable ones
+                    if "Connection" in error_str or "Stream" in error_str or "closed" in error_str.lower():
+                        debug_print("Critical stream error, terminating response processing")
+                        break
+                    else:
+                        debug_print("Non-critical error, continuing response processing")
+                        continue
                     
         except Exception as e:
             print(f"Response processing error: {e}")
